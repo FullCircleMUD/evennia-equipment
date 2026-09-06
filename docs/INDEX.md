@@ -3,8 +3,11 @@
 Catalogue of every design document in this wiki. A document that is not listed here is invisible, so
 index new ones as they are written.
 
-The library is at scaffold stage, so this list is short. It grows as the extraction is designed and
-decisions are recorded.
+## Design
+
+| Document | What it covers |
+|---|---|
+| [design.md](design.md) | The mixin family, how the library couples to a game, and why weight is rebuilt rather than adjusted |
 
 ## Process and discipline
 

@@ -14,23 +14,25 @@ worn and what is wielded — and the carrying model that sits under them: what a
 it weighs, and how much it can take. Tagline: **"Wearslots and carrying capacity for Evennia."**
 
 The machinery exists already, inside FullCircleMUD, and this library is where it is being extracted
-to. Nothing has moved yet.
+to. The weight half is here; the rest is still there.
 
 For the big-picture overview, read [README.md](README.md).
 For the design wiki, read [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
 
-**Scaffold only — no library code.** The repo meets the library standards and the test runner works;
-the equipment and carrying machinery is still in FCM. See [docs/progress.md](docs/progress.md).
+**The weight half is built; the wearing half is not.** `EquipmentCarriableMixin` and
+`EquipmentCarryingMixin` exist and are tested. Wearslots, containers and the hooks that drive the
+rebuild are still in FCM. See [docs/progress.md](docs/progress.md).
 
 ## Where to read first
 
 1. [docs/test-plan.md](docs/test-plan.md) — the cases the library commits to. **A behavioural change
    starts here**, not in the code. **Start here.**
-2. [README.md](README.md) — what the library is and its status.
-3. [docs/INDEX.md](docs/INDEX.md) — map of all design docs.
-4. [docs/interoperability.md](docs/interoperability.md) — this library against its siblings.
+2. [docs/design.md](docs/design.md) — the mixin family and the reasoning behind it.
+3. [README.md](README.md) — what the library is and its status.
+4. [docs/INDEX.md](docs/INDEX.md) — map of all design docs.
+5. [docs/interoperability.md](docs/interoperability.md) — this library against its siblings.
 
 **FCM's `design/inventory-equipment.md` describes the system being extracted, not this library.** It
 is the source to read for how the mechanism behaves today. It is not a specification for what belongs
@@ -53,6 +55,16 @@ Every implementation decision must respect them.
    code. See [test-first-process.md](../../design/test-first-process.md) for the process and the
    rationale.
 
+4. **Carrying is the base; wearing is a specialisation of it.** A game can have carrying without
+   wearing, never the reverse. `EquipmentWearableMixin` extends `EquipmentCarriableMixin`, and
+   `EquipmentWearslotsMixin` extends `EquipmentCarryingMixin`, on purpose — do not split the pairs
+   apart on the grounds that the two mechanisms are independent. See
+   [docs/design.md](docs/design.md) § The mixin family.
+
+5. **Game concepts reach the library through the object, never through an import.** The library asks
+   an item what it is; it never asks whether a sibling library is installed. A hook earns its place
+   only if the library works without it being overridden.
+
 `[TBD — needs discussion: where exactly the mechanism/content line falls, and therefore which of the
 extracted pieces are library and which stay in FCM. Drawing that line is the first task of the
 extraction. Do not settle it by writing code.]`
@@ -71,6 +83,11 @@ Decided as questions arise — the library is too young for a settled list. Ruli
 - **Behavioural change starts in the test plan.** Add the case, write the test, then implement. Fill
   the **Test function** column when the test exists — it is a coverage claim and the linter checks it
   both ways.
+- **Assign through the `AttributeProperty`, never `.db`.** `item.weight = 2.0` passes through
+  `at_set()` and is validated; `item.db.weight = 2.0` writes straight past the descriptor and is not.
+  The library reads and writes its own attributes through the property everywhere, so validation has
+  one path rather than two. Evennia documents the bypass, and it is not fixable from the library
+  side — so a consumer using `.db` gets whatever they set, and the docs say so.
 - **Editing design docs.** Update or add design documents whenever an architectural decision is made
   or refined. Capture the *why*, not just the *what*. Index new docs in [docs/INDEX.md](docs/INDEX.md).
 - **Don't put implementation detail in this file or README.** Link out to `docs/` instead. Keep
@@ -110,6 +127,7 @@ evennia-equipment/
 ├── .gitignore
 ├── docs/                      # design wiki (humans + LLMs)
 │   ├── INDEX.md
+│   ├── design.md              # the mixin family, and why
 │   ├── progress.md
 │   ├── test-plan.md
 │   ├── interoperability.md
@@ -117,10 +135,13 @@ evennia-equipment/
 ├── src/
 │   └── evennia_equipment/     # library code (src layout)
 │       ├── __init__.py
+│       ├── carriable.py       # EquipmentCarriableMixin — an item's weight
+│       ├── carrying.py        # EquipmentCarryingMixin — the total, and capacity
 │       ├── log.py             # shim onto Evennia's logger → equipment.log
 │       └── tests.py           # unit tests, run via runtests.py
 └── tests/                     # standalone test infrastructure
     ├── __init__.py
+    ├── game_typeclasses.py    # real typeclasses carrying the mixins
     ├── test_settings.py
     └── urls.py
 ```

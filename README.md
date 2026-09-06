@@ -5,9 +5,10 @@ underneath: what a character holds, what it weighs, and how much it can take.
 
 ## Status
 
-**Scaffold only.** The repo is set up to the project's library standards — package, test runner, log
-shim, docs — and there is no library code yet. The machinery it will hold currently lives inside
-FullCircleMUD and is being extracted from there. See
+**Early — the weight half works, the wearing half is not written.** An object declares a weight, a
+carrier totals what it holds and answers what more it can take, and the total keeps itself current
+through arrivals, departures, reloads and weight changes in place. Equipment slots and containers are
+still to come. Nothing is published. See
 [docs/progress.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/progress.md).
 
 ## The problem it solves
@@ -55,6 +56,7 @@ python runtests.py
 ## Learn more
 
 - [docs/INDEX.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/INDEX.md) — the design wiki
+- [docs/design.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/design.md) — the mixin family and the reasoning behind it
 - [docs/test-plan.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/test-plan.md) — every case the library commits to covering
 - [docs/interoperability.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/interoperability.md) — this library against its siblings
 - [CLAUDE.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/CLAUDE.md) — context for LLM agents working in this repo
