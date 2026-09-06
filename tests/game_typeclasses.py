@@ -17,6 +17,7 @@ from evennia_equipment.carriable import (
     WeightProperty,
 )
 from evennia_equipment.carrying import EquipmentCarryingMixin
+from evennia_equipment.container import EquipmentContainerMixin
 
 
 class CarriableThing(EquipmentCarriableMixin, DefaultObject):
@@ -71,6 +72,25 @@ class PurseCarrier(Carrier):
 
     def extra_capacity(self):
         return self.ndb.strength_bonus or 0.0
+
+
+class Container(EquipmentContainerMixin, DefaultObject):
+    """A backpack — carried, and carrying. CN cases."""
+
+
+class PanniersContainer(Container):
+    """Contributes only its own weight, as a mount's panniers do. CN-13."""
+
+    @property
+    def effective_weight(self):
+        return self.weight
+
+
+class PurseContainer(Container):
+    """A container holding weight that is not an object. CN-12."""
+
+    def extra_weight(self):
+        return self.ndb.coin_weight or 0.0
 
 
 class Nowhere(DefaultObject):

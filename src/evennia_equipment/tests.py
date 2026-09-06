@@ -518,3 +518,156 @@ class WeightChangeTests(DjangoTestCase):
         thing.weight = 6.0
         self.assertTrue(thing.ndb.weight_change_seen)
         self.assertEqual(carrier.items_weight, 6.0)
+
+
+class ContainerTests(DjangoTestCase):
+    """CN — an object that is carried and carrying at once."""
+
+    def _make(self, typeclass, **kwargs):
+        """Create one object. Not a test."""
+        from evennia import create_object
+
+        return create_object(typeclass, key=typeclass.__name__, nohome=True, **kwargs)
+
+    def _carrier(self):
+        from tests.game_typeclasses import Carrier
+
+        return self._make(Carrier)
+
+    def _container(self, typeclass=None, own_weight=1.0):
+        from tests.game_typeclasses import Container
+
+        container = self._make(typeclass or Container)
+        container.weight = own_weight
+        return container
+
+    def _thing(self, weight, location=None):
+        from tests.game_typeclasses import CarriableThing
+
+        thing = self._make(CarriableThing)
+        thing.weight = weight
+        if location:
+            thing.move_to(location)
+        return thing
+
+    # --- what a container contributes ------------------------------------
+
+    def test_cn_01_an_empty_containers_effective_weight_is_its_own(self):
+        """CN-01"""
+        self.assertEqual(self._container(own_weight=1.5).effective_weight, 1.5)
+
+    def test_cn_02_a_loaded_containers_effective_weight_includes_contents(self):
+        """CN-02"""
+        container = self._container(own_weight=1.0)
+        self._thing(2.0, location=container)
+        self.assertEqual(container.effective_weight, 3.0)
+
+    def test_cn_03_a_carrier_counts_a_containers_contents_through_it(self):
+        """CN-03"""
+        carrier = self._carrier()
+        container = self._container(own_weight=1.0)
+        self._thing(2.0, location=container)
+        container.move_to(carrier)
+        self.assertEqual(carrier.items_weight, 3.0)
+
+    def test_cn_12_a_containers_extra_weight_counts_toward_what_it_contributes(self):
+        """CN-12"""
+        from tests.game_typeclasses import PurseContainer
+
+        container = self._container(PurseContainer, own_weight=1.0)
+        container.ndb.coin_weight = 0.5
+        self.assertEqual(container.effective_weight, 1.5)
+
+    # --- propagation -------------------------------------------------------
+
+    def test_cn_04_adding_to_a_held_container_updates_the_carrier(self):
+        """CN-04"""
+        carrier = self._carrier()
+        container = self._container(own_weight=1.0)
+        container.move_to(carrier)
+        self.assertEqual(carrier.items_weight, 1.0)
+        self._thing(2.0, location=container)
+        self.assertEqual(carrier.items_weight, 3.0)
+
+    def test_cn_05_removing_from_a_held_container_updates_the_carrier(self):
+        """CN-05"""
+        from tests.game_typeclasses import Nowhere
+
+        carrier = self._carrier()
+        container = self._container(own_weight=1.0)
+        thing = self._thing(2.0, location=container)
+        container.move_to(carrier)
+        self.assertEqual(carrier.items_weight, 3.0)
+        thing.move_to(self._make(Nowhere))
+        self.assertEqual(carrier.items_weight, 1.0)
+
+    def test_cn_06_changing_a_weight_inside_a_container_updates_the_carrier(self):
+        """CN-06"""
+        carrier = self._carrier()
+        container = self._container(own_weight=1.0)
+        thing = self._thing(2.0, location=container)
+        container.move_to(carrier)
+        self.assertEqual(carrier.items_weight, 3.0)
+        thing.weight = 5.0
+        self.assertEqual(carrier.items_weight, 6.0)
+
+    def test_cn_07_two_levels_of_nesting_propagate_to_the_top(self):
+        """CN-07"""
+        carrier = self._carrier()
+        outer = self._container(own_weight=1.0)
+        inner = self._container(own_weight=1.0)
+        inner.move_to(outer)
+        outer.move_to(carrier)
+        self.assertEqual(carrier.items_weight, 2.0)
+        self._thing(4.0, location=inner)
+        self.assertEqual(carrier.items_weight, 6.0)
+
+    def test_cn_08_propagation_stops_at_a_holder_that_does_not_carry(self):
+        """CN-08"""
+        from tests.game_typeclasses import Nowhere
+
+        container = self._container(own_weight=1.0)
+        container.move_to(self._make(Nowhere))
+        self._thing(2.0, location=container)
+        self.assertEqual(container.effective_weight, 3.0)
+
+    def test_cn_09_a_containers_own_weight_change_updates_the_carrier(self):
+        """CN-09"""
+        carrier = self._carrier()
+        container = self._container(own_weight=1.0)
+        container.move_to(carrier)
+        self.assertEqual(carrier.items_weight, 1.0)
+        container.weight = 4.0
+        self.assertEqual(carrier.items_weight, 4.0)
+
+    # --- composition, and the risk ----------------------------------------
+
+    def test_cn_10_a_container_refuses_what_cannot_be_carried(self):
+        """CN-10"""
+        from tests.game_typeclasses import Nowhere
+
+        container = self._container()
+        stone = self._make(Nowhere)
+        self.assertFalse(stone.move_to(container))
+        self.assertNotIn(stone, container.contents)
+
+    def test_cn_13_a_subclass_may_contribute_only_its_own_weight(self):
+        """CN-13"""
+        from tests.game_typeclasses import PanniersContainer
+
+        carrier = self._carrier()
+        panniers = self._container(PanniersContainer, own_weight=1.0)
+        self._thing(9.0, location=panniers)
+        panniers.move_to(carrier)
+        self.assertEqual(carrier.items_weight, 1.0)
+
+    def test_cn_14_loading_a_container_into_memory_does_not_raise(self):
+        """CN-14"""
+        from tests.game_typeclasses import Container
+
+        carrier = self._carrier()
+        container = self._container(own_weight=1.0)
+        self._thing(2.0, location=container)
+        container.move_to(carrier)
+        container.at_init()
+        self.assertIsNone(Container().at_init())

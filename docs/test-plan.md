@@ -26,6 +26,7 @@ Behaviour is agreed here first, before any test or code — see
 | `CP` | Capacity, and the queries a consumer asks against it |
 | `EW` | `effective_weight` — what an object contributes to whoever holds it |
 | `WC` | `at_weight_changed` — a weight changing while the object is held |
+| `CN` | `EquipmentContainerMixin` — an object that is both carried and carrying |
 
 ## Fixtures
 
@@ -44,6 +45,8 @@ which imports nothing but the library.
 | `RecordingCarrier` | A `Carrier` with a witness mixin *below* it in the MRO — only reached if the library calls `super()` |
 | `RefusingCarrier` | A `Carrier` whose chain vetoes every arrival, so the library must not overrule it |
 | `Nowhere` | Carries no mixin: both somewhere to move an object to, and the object a carrier refuses |
+| `Container` | A minimal typeclass carrying `EquipmentContainerMixin` — carried and carrying at once |
+| `PanniersContainer` | A `Container` contributing only its own weight, as a mount's panniers would |
 
 ## Cases
 
@@ -100,9 +103,9 @@ so a missed event costs one stale reading rather than permanent drift. `obj.dele
 `at_object_leave()` — confirmed in Evennia's `objects.py`, where the hook is called only from
 `move_to()` — so that miss is real and the rebuild is what absorbs it.
 
-**Every case here assumes no containers are present.** Container contents weight adds a term to this
-sum, and arrives with `EquipmentContainerMixin` as its own cases; nothing below is revised by it,
-because a container-free sum stays correct.
+**Every case here assumes no containers are present**, and none needed revising when they arrived: the
+sum reads `effective_weight`, which a container answers for itself, so a container-free sum is still a
+correct sum. The container's own cases are `CN`.
 
 Only carriable objects reach `contents` — an object without `EquipmentCarriableMixin` is refused
 entry, which is `at_pre_object_receive`'s job and gets its own cases with the hooks.
@@ -266,6 +269,47 @@ value is stored, so a rebuild triggered there would read the old weight back for
 Nesting is not covered here. An object inside a container notifies the container, and forwarding that
 up to whoever holds the container arrives with `EquipmentContainerMixin`.
 
+### CN — the container
+
+A container is carried and carrying at once, so it takes both mixins. It adds two things: it
+contributes its contents as well as itself, and it tells its own holder when that changes.
+
+```python
+class EquipmentContainerMixin(EquipmentCarriableMixin, EquipmentCarryingMixin):
+```
+
+The panniers case — a container whose contents do not count against whoever carries it — is a subclass
+overriding `effective_weight`, not a flag. A flag would say there are exactly two modes; an override
+also serves "half the weight", which a boolean cannot express.
+
+| ID | Case | Test function |
+|---|---|---|
+| CN-01 | An empty container's effective weight is its own weight | test_cn_01_an_empty_containers_effective_weight_is_its_own |
+| CN-02 | A loaded container's effective weight is its own weight plus its contents | test_cn_02_a_loaded_containers_effective_weight_includes_contents |
+| CN-03 | A carrier counts a container's contents through it | test_cn_03_a_carrier_counts_a_containers_contents_through_it |
+| CN-04 | Adding to a held container updates the carrier's total | test_cn_04_adding_to_a_held_container_updates_the_carrier |
+| CN-05 | Removing from a held container updates the carrier's total | test_cn_05_removing_from_a_held_container_updates_the_carrier |
+| CN-06 | Changing the weight of an item inside a held container updates the carrier's total | test_cn_06_changing_a_weight_inside_a_container_updates_the_carrier |
+| CN-07 | Two levels of nesting propagate to the top | test_cn_07_two_levels_of_nesting_propagate_to_the_top |
+| CN-08 | Propagation stops at a holder that does not carry | test_cn_08_propagation_stops_at_a_holder_that_does_not_carry |
+| CN-09 | A container's own weight changing updates the carrier's total | test_cn_09_a_containers_own_weight_change_updates_the_carrier |
+| CN-10 | A container refuses an object that cannot be carried | test_cn_10_a_container_refuses_what_cannot_be_carried |
+| CN-12 | A container's extra weight counts toward what it contributes | test_cn_12_a_containers_extra_weight_counts_toward_what_it_contributes |
+| CN-13 | A subclass may contribute only its own weight, excluding its contents | test_cn_13_a_subclass_may_contribute_only_its_own_weight |
+| CN-14 | Loading a container into memory does not raise | test_cn_14_loading_a_container_into_memory_does_not_raise |
+
+`CN-08` matters most: if the chain does not terminate the failure is a loop, not a wrong number. A
+character is not carriable, and a room does not carry, so the walk upward runs out on its own.
+
+`CN-10` is the composition check — inherited carrying behaviour still reachable through the MRO.
+
+`CN-14` aims at a real risk. The container rebuilds on load and now notifies its holder, which reads
+back into the container while Evennia is still constructing objects. `at_init` carries a `self.pk`
+guard for that, and propagation reaches the rebuild by a route that does not pass through it.
+
+`CN-11` was retired before it was written — a container's own capacity is inherited behaviour already
+covered by `CN-10`.
+
 ## Open decisions
 
 Surfaces this library is expected to grow, listed so they are not forgotten, and deliberately without
@@ -285,8 +329,5 @@ cases. A case here is a commitment, and nothing below has been designed yet.
 - **[TBD — needs discussion: what stays out.** Durability, fungible balances and item ownership are
   all adjacent to equipment in FCM and are not obviously this library's. Each needs a ruling before
   any of it is lifted.]
-- **[TBD — needs discussion: forwarding a rebuild up through a container.** An object whose weight
-  changes notifies its holder, but a container that rebuilds does not yet tell whoever holds *it*.
-  Arrives with `EquipmentContainerMixin`.]
 - **[TBD — needs discussion: settings and their defaults**, and which of them have no safe default and
   so are refused at boot.]

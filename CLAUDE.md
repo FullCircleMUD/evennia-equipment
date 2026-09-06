@@ -21,9 +21,9 @@ For the design wiki, read [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
 
-**The weight half is built; the wearing half is not.** `EquipmentCarriableMixin` and
-`EquipmentCarryingMixin` exist and are tested. Wearslots, containers and the hooks that drive the
-rebuild are still in FCM. See [docs/progress.md](docs/progress.md).
+**The weight half is built; the wearing half is not.** `EquipmentCarriableMixin`,
+`EquipmentCarryingMixin` and `EquipmentContainerMixin` exist and are tested. Wearslots are still in
+FCM. See [docs/progress.md](docs/progress.md).
 
 ## Where to read first
 
@@ -137,6 +137,7 @@ evennia-equipment/
 │       ├── __init__.py
 │       ├── carriable.py       # EquipmentCarriableMixin — an item's weight
 │       ├── carrying.py        # EquipmentCarryingMixin — the total, and capacity
+│       ├── container.py       # EquipmentContainerMixin — carried and carrying
 │       ├── log.py             # shim onto Evennia's logger → equipment.log
 │       └── tests.py           # unit tests, run via runtests.py
 └── tests/                     # standalone test infrastructure

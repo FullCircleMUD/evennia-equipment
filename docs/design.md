@@ -14,8 +14,8 @@ side.
 | `EquipmentCarryingMixin` | `EquipmentCarriableMixin` | `weight` |
 | `EquipmentWearslotsMixin(EquipmentCarryingMixin)` | `EquipmentWearableMixin(EquipmentCarriableMixin)` | `wearslot` |
 
-**Built:** `EquipmentCarriableMixin`, `EquipmentCarryingMixin`. The wearing pair and
-`EquipmentContainerMixin(EquipmentCarriableMixin)` are agreed and unwritten.
+**Built:** `EquipmentCarriableMixin`, `EquipmentCarryingMixin`, and `EquipmentContainerMixin`, which
+takes both. The wearing pair is agreed and unwritten.
 
 The specialisation inherits rather than composes, so a consumer makes one decision per class — *worn,
 or only carried* — and a wearable cannot be declared without the weight contract it depends on.
@@ -98,6 +98,35 @@ Rules that can be stated go in the `AttributeProperty`'s `at_set()`, not at each
 `at_set()` fires only on assignment through the descriptor, so `obj.db.weight` bypasses it. That cannot
 be closed from here — it is documented and pinned by `CR-11` rather than defended against.
 
+## The container
+
+A container is carried and carrying at once, so it takes both mixins and adds two things:
+
+```python
+@property
+def effective_weight(self):
+    return self.weight + self.current_weight_carried
+
+def _recalculate_item_weight(self, exclude=None):
+    super()._recalculate_item_weight(exclude=exclude)
+    self.at_weight_changed()
+```
+
+The first is what a carrier already asks every object for, so nothing in `EquipmentCarryingMixin`
+changes. The second forwards a rebuild upward, since a container's contribution moves whenever its
+contents do.
+
+**The walk upward ends without a guard.** A character is not carriable and a room does not carry, so
+neither passes the check in `at_weight_changed()` and the chain runs out on its own.
+
+**`current_weight_carried`, not `items_weight`** — so a container whose game tracks a balance
+contributes coin as well as objects, through `extra_weight()`, without the container knowing balances
+exist.
+
+The panniers case — contents that do not count against whoever carries the container — is a subclass
+overriding `effective_weight` to return `self.weight` alone. Not a flag: a boolean says there are
+exactly two modes, and an override also serves "half the weight".
+
 ## Commands
 
 **Core ships none, and `get` / `drop` / `give` need none.** Evennia's `CmdGet` calls
@@ -111,8 +140,6 @@ ships one working answer, opt-in.
 ## Not yet decided
 
 - Where the mechanism/content line falls for the wearing pair. See the `[TBD]` in [../CLAUDE.md](../CLAUDE.md).
-- Forwarding a rebuild up through a container — an object notifies its holder, but a container that
-  rebuilds does not yet tell whoever holds it. Arrives with `EquipmentContainerMixin`.
 - Whether the library renders equipment displays or returns data for the consumer to format. Both of
   FCM's hard imports live in its render methods.
 - The item-side gate a consumer overrides to refuse an item, and its default.

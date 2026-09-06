@@ -7,8 +7,8 @@ underneath: what a character holds, what it weighs, and how much it can take.
 
 **Early — the weight half works, the wearing half is not written.** An object declares a weight, a
 carrier totals what it holds and answers what more it can take, and the total keeps itself current
-through arrivals, departures, reloads and weight changes in place. Equipment slots and containers are
-still to come. Nothing is published. See
+through arrivals, departures, reloads and weight changes in place. Containers nest and their contents
+count through them. Equipment slots are still to come. Nothing is published. See
 [docs/progress.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/progress.md).
 
 ## The problem it solves

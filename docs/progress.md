@@ -2,6 +2,31 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-06 — the container
+
+`EquipmentContainerMixin` is built and tested. 67 tests. Twelve lines of code, because the seam was
+already there.
+
+- **It takes both mixins** — a container is carried and carrying at once, and the two share no
+  members.
+- **`effective_weight` returns its own weight plus its contents.** A carrier already asks every object
+  for that, so nothing in `EquipmentCarryingMixin` changed to accommodate containers.
+- **A rebuild forwards upward** — `_recalculate_item_weight()` calls `at_weight_changed()` after
+  `super()`, so a holder's total follows what happens inside a bag it is carrying.
+- **The walk upward needs no termination guard.** A character is not carriable and a room does not
+  carry, so the chain runs out on its own. `CN-07` and `CN-08` prove it, and a failure there would have
+  been a loop rather than a wrong number.
+- **Coin in a purse counts, unplanned.** `effective_weight` reads `current_weight_carried` rather than
+  `items_weight`, so `extra_weight()` is included and a container never learns balances exist.
+  `CN-12`.
+- **The panniers case is a subclass**, not a flag — `effective_weight` returning `self.weight` alone.
+  A boolean would say there are exactly two modes. `CN-13`.
+
+`CN-14` aimed at the `at_init` risk — a container rebuilding on load notifies its holder, which reads
+back in while Evennia is still constructing objects. It came out clean.
+
+Not built: the wearing pair.
+
 ## 2026-09-06 — the weight half
 
 `EquipmentCarriableMixin` and `EquipmentCarryingMixin` are built and tested. 54 tests.
