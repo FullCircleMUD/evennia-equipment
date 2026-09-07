@@ -2,6 +2,35 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-07 — equipment survives a world rebuild
+
+The mechanism is complete. 158 tests.
+
+- **Two required settings**, both refused at boot and reported together — `EQUIPMENT_WEARSLOTS` and
+  `EQUIPMENT_IDENTITY_ATTRIBUTE`. Collection came back because two independent settings can both be
+  wrong; within the enum's own checks the sequence still short-circuits. Cases `CF-14`–`CF-18`.
+- **`wearslot_identity` on the item** reads the attribute the setting names. `None` is not a failure —
+  such an item is worn perfectly well and simply cannot be restored, because there is nothing to match
+  it by. Cases `ID`.
+- **`update_worn_equipment_record()`** writes the identities of what is worn to a persisted attribute.
+  Rebuilt rather than appended to, so an item taken off since the last call is not in it. Cases `ER`.
+- **`restore_worn()`** walks `contents` and wears anything whose identity is in the record, returning
+  one `(bool, str)` per attempt straight from `wear()`. Order does not matter — the items all fitted
+  at once when the record was written. Cases `RW`.
+- **`at_pre_remove()`** is the one gate on removal, allowing by default. On the wearer rather than the
+  item: a curse is the item's business, but "you are paralysed" is the wearer's, and an item-side hook
+  could not express it. Cases `RM-10`–`RM-13`.
+
+`RW-06` was written after the implementation, not before, and it earned its place: `restore_worn()`
+read `item.wearslot_identity` on everything in `contents`, and a character carrying a rock crashed.
+`getattr` with a default is the fix.
+
+The record is the one thing in this library that is written down rather than derived. Everything else
+rebuilds from live state; this has to survive the moment its source is destroyed.
+
+`docs/installing.md` arrives with the standard that now requires it — eight numbered steps, the two
+required settings, and what `check_settings()` cannot catch.
+
 ## 2026-09-07 — one enum instead of a layouts mapping
 
 The wearing half was reworked. Slot names now come from a single consumer-declared `Enum`, and a

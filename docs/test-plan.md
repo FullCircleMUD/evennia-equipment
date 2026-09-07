@@ -34,6 +34,9 @@ Behaviour is agreed here first, before any test or code — see
 | `RM` | `remove()` — freeing the slots an item occupies |
 | `GW` | `get_all_worn()` — what a wearer has on |
 | `GC` | `get_carried()` — what a wearer holds but is not wearing |
+| `ID` | `wearslot_identity` — what an item is known by across a world rebuild |
+| `ER` | `update_worn_equipment_record()` — writing down what is worn, to restore it later |
+| `RW` | `restore_worn()` — putting the recorded equipment back on after a rebuild |
 
 ## Fixtures
 
@@ -370,7 +373,25 @@ slots and an item's declaration.
 
 No base class: a slot carries one thing, its name. Survival needs one because a stage carries three.
 
+**A second required setting, `EQUIPMENT_IDENTITY_ATTRIBUTE`**, names the attribute an item carries as
+its durable identity — a token id, an archive id, whatever survives a world rebuild. There is no name
+the library could invent, so it has no default either.
+
+```python
+EQUIPMENT_IDENTITY_ATTRIBUTE = "token_id"
+```
+
+**Every problem is collected and raised together.** Two independent settings can both be wrong, and
+stopping at the first turns that into fix-restart-fix-restart, once per mistake. A consumer gets the
+whole list and works through it before trying again. Within the enum's own checks the sequence still
+short-circuits, because each one makes the next meaningful.
+
 **The bar is that nothing downstream crashes**, plus `CF-07`, which goes past it deliberately.
+
+**What cannot be validated at boot is accepted rather than worked around.** Nothing at boot can see an
+item, so an identity attribute naming something no item carries passes every check here and yields
+`None` for every identity. The diagnostic is `restore_worn()` reporting how many it could not match.
+The library validates what it can see, and says so.
 
 | ID | Case | Test function |
 |---|---|---|
@@ -382,10 +403,19 @@ No base class: a slot carries one thing, its name. Survival needs one because a 
 | CF-09 | A valid configuration boots | test_cf_09_a_valid_configuration_boots |
 | CF-10 | The accessor returns the enum's values | test_cf_10_the_accessor_returns_the_enums_values |
 | CF-11 | An enum with no members is refused | test_cf_11_an_enum_with_no_members_is_refused |
+| CF-14 | A missing `EQUIPMENT_IDENTITY_ATTRIBUTE` is refused at boot | test_cf_14_a_missing_identity_attribute_is_refused |
+| CF-15 | An identity attribute that is not a string is refused | test_cf_15_a_non_string_identity_attribute_is_refused |
+| CF-16 | An empty identity attribute is refused | test_cf_16_an_empty_identity_attribute_is_refused |
+| CF-17 | Both settings wrong are reported in one refusal, not the first only | test_cf_17_both_settings_wrong_are_reported_at_once |
+| CF-18 | The accessor returns the declared attribute name | test_cf_18_the_accessor_returns_the_attribute_name |
 
 Retired: `CF-04` (no mapping to be empty), `CF-05` (a plain string is caught by `CF-03`), `CF-08`
-(the checks are sequential, so only one can be wrong at a time), `CF-12` and `CF-13` (one accessor,
-covered by `CF-10`).
+(superseded by `CF-17`, which collects across two settings rather than within one), `CF-12` and
+`CF-13` (one accessor, covered by `CF-10`).
+
+`CF-18` pins the accessor's shape. For a required setting the standards want a plain read — no
+`getattr` fallback and no `if`, because boot has already guaranteed the value is there and usable.
+Deferring the read is the only reason the accessor exists.
 
 `CF-07` is the one worth having. Enum member *names* cannot repeat, but *values* can, and Python
 silently makes the second an alias — `HEAD = "HEAD"` followed by `SKULL = "HEAD"` leaves one member
@@ -550,8 +580,13 @@ not shift — which is why the two mixins compose without either knowing about t
 `remove(item)` frees every slot the item occupies and leaves it in `contents`. Taking something off
 does not put it down.
 
-Nothing gates it. An item can always come off — see *Open decisions* for the cursed-item question,
-which is deliberately unanswered rather than answered with a hook nobody calls.
+`at_pre_remove(item)` is the one gate, returning `(bool, str)` — the same shape `remove()` returns, so
+a consumer's reason reaches the player rather than being replaced by something generic. It allows by
+default, and the library refuses nothing of its own.
+
+**On the wearer rather than the item**, deliberately. A cursed item is the item's business, but "you
+are paralysed" or "not in combat" is the wearer's, and an item-side hook cannot express those. A
+consumer wanting item-side logic delegates to the item in one line; the reverse is not available.
 
 | ID | Case | Test function |
 |---|---|---|
@@ -564,6 +599,10 @@ which is deliberately unanswered rather than answered with a hook nobody calls.
 | RM-07 | A removed item can be worn again | test_rm_07_a_removed_item_can_be_worn_again |
 | RM-08 | Both outcomes return a message | test_rm_08_both_outcomes_return_a_message |
 | RM-09 | Removing one of two identical items frees only that one | test_rm_09_removing_one_of_two_identical_items_frees_only_that_one |
+| RM-10 | `at_pre_remove()` allows removal by default | test_rm_10_the_hook_allows_removal_by_default |
+| RM-11 | A consumer refusing stops the removal and the item stays worn | test_rm_11_a_consumer_refusing_stops_the_removal |
+| RM-12 | The consumer's reason is what `remove()` returns | test_rm_12_the_consumers_reason_is_returned |
+| RM-13 | The slots are untouched when removal is refused | test_rm_13_the_slots_are_untouched_when_removal_is_refused |
 
 `RM-02` is the counterpart to `WE-02`: a two-handed item sits under two keys, and freeing only the
 first leaves a phantom holding the other hand for good.
@@ -573,6 +612,9 @@ while quietly stripping everything else the wearer had on.
 
 `RM-07` is the round trip. An item whose slots are freed but which is still referenced somewhere else
 reads as worn, so `wear()` refuses it — a failure neither `RM-01` nor `WE-08` sees on its own.
+
+`RM-13` is the counterpart to `WE-05`: a refusal must leave the slots exactly as they were, not
+half-freed.
 
 `RM-09` is about identity rather than equality. A consumer's typeclass may define `__eq__` — by key,
 or by a token id — and comparing slots with `==` would then clear every slot holding an item that
@@ -594,7 +636,7 @@ figure.
 | GW-02 | A worn item is listed | test_gw_02_a_worn_item_is_listed |
 | GW-03 | A multi-slot item is listed once, not once per slot | test_gw_03_a_multi_slot_item_is_listed_once |
 | GW-04 | A carried but unworn item is not listed | test_gw_04_a_carried_item_is_not_listed |
-| GW-05 | A deleted item drops out | test_gw_05_a_deleted_item_drops_out |
+| GW-05 | A deleted item is no longer listed | test_gw_05_a_deleted_item_drops_out |
 | GW-06 | Of two items that compare equal, only the worn one is listed | test_gw_06_of_two_equal_items_only_the_worn_one_is_listed |
 
 ### GC — what is carried
@@ -623,6 +665,91 @@ consumer's typeclass may define by key or by token id. Two rings that compare eq
 then both read as worn: the carried one disappearing from the player's inventory and the worn one
 appearing twice. The comparison is by identity for that reason.
 
+### ID — what an item is known by
+
+A world rebuild reissues every primary key, so a database reference cannot survive it. What can is
+whatever the game already uses to identify an item permanently — a token id, an archive id — named
+once in `EQUIPMENT_IDENTITY_ATTRIBUTE` and read off the item as `wearslot_identity`.
+
+| ID | Case | Test function |
+|---|---|---|
+| ID-01 | The identity is read from the attribute `EQUIPMENT_IDENTITY_ATTRIBUTE` names | test_id_01_the_identity_is_read_from_the_named_attribute |
+| ID-02 | An item without that attribute has no identity | test_id_02_an_item_without_the_attribute_has_no_identity |
+| ID-03 | A consumer overriding the accessor wins | test_id_03_a_consumer_overriding_the_accessor_wins |
+
+`ID-02` is not a failure. An item with no identity is worn perfectly well; it simply cannot be
+restored, because there is nothing to match it by. Inventing a key would be worse — restore would
+look for something that never existed.
+
+`ID-03` is for a game whose items are not uniform. The setting covers the common case; a typeclass
+that keeps its identity somewhere else overrides the accessor instead.
+
+### ER — writing down what is worn
+
+`update_worn_equipment_record()` rebuilds `worn_equipment_record` from what the wearer currently has
+on. A consumer calls it before archiving — FCM wires it into its own archive path, so there is one
+call site rather than scattered ones.
+
+**The record is persisted, not held in memory.** It has to survive the very event that destroys
+everything else about the wearer's equipment, so it is an attribute on the object and never `ndb`.
+
+**It is rebuilt, not appended to.** The record describes what is worn now, so anything taken off since
+the last call is absent from it.
+
+| ID | Case | Test function |
+|---|---|---|
+| ER-01 | Nothing worn gives an empty record | test_er_01_nothing_worn_gives_an_empty_record |
+| ER-02 | A worn item's identity is recorded | test_er_02_a_worn_items_identity_is_recorded |
+| ER-03 | A carried but unworn item is not recorded | test_er_03_a_carried_item_is_not_recorded |
+| ER-04 | An item with no identity is skipped | test_er_04_an_item_with_no_identity_is_skipped |
+| ER-05 | An item taken off since the last call is no longer in the record | test_er_05_an_item_taken_off_is_no_longer_in_the_record |
+| ER-06 | Calling it twice gives the same result | test_er_06_calling_it_twice_gives_the_same_result |
+| ER-07 | The record is persisted on the wearer, not held in memory | test_er_07_the_record_is_persisted_not_held_in_memory |
+
+`ER-05` is what makes it a record of the present rather than a history. An append-only implementation
+passes every other case here and slowly accumulates gear the character no longer owns, which restore
+would then look for and never find.
+
+`ER-07` is the case the word "cache" would have talked us out of. A record that does not survive the
+archive is worth nothing, since surviving the archive is the only reason it exists.
+
+### RW — putting the equipment back on
+
+`restore_worn()` walks `contents` and wears anything whose identity is in the record. A consumer calls
+it after their own restore has put the items back — the library has no way to know when that is.
+
+**It walks `contents`, not the record.** An identity matching nothing is then never visited, so there
+is nothing to ignore explicitly and no case for it. Every outcome is a `(bool, str)` from `wear()`
+itself, so the library grows no second vocabulary for the same refusals.
+
+**Order does not matter.** The items all fitted simultaneously when the record was written, so they
+all fit now, whatever order `contents` gives them. No sorting, no second pass, no rollback.
+
+| ID | Case | Test function |
+|---|---|---|
+| RW-01 | An item whose identity is in the record is worn | test_rw_01_an_item_in_the_record_is_worn |
+| RW-02 | An item not named in the record stays carried | test_rw_02_an_item_not_in_the_record_stays_carried |
+| RW-03 | An item already worn returns `wear()`'s refusal | test_rw_03_an_item_already_worn_returns_wears_refusal |
+| RW-04 | An item that cannot be worn returns `wear()`'s refusal | test_rw_04_an_item_that_cannot_be_worn_returns_wears_refusal |
+| RW-05 | The record is unchanged by restoring | test_rw_05_the_record_is_unchanged_by_restoring |
+| RW-06 | An item that is not wearable at all is passed over | test_rw_06_an_item_that_is_not_wearable_is_passed_over |
+
+`RW-04`'s real trigger is a slot removed from `body_slots` since the record was written. The item comes
+back carried rather than worn, and the refusal says why — which is the whole diagnostic a consumer
+gets.
+
+`RW-03` means calling it twice reports every item as a failure the second time. That is correct for
+one call per restore, which is the intended use, and worth knowing rather than discovering: under
+`evennia-scaling` this runs on every shard move.
+
+`RW-06` is the ordinary case that walking `contents` invites. A character carries rocks and bread as
+well as armour, and a plain carriable item has no `wearslot_identity` to ask about — reading one
+raises rather than returning `None`.
+
+A returned list of refusals is also the only signal that `EQUIPMENT_IDENTITY_ATTRIBUTE` names
+something the game's items do not carry — every identity is then `None`, the record is empty, and
+nothing is restored.
+
 ## Open decisions
 
 Surfaces this library is expected to grow, listed so they are not forgotten, and deliberately without
@@ -642,9 +769,5 @@ cases. A case here is a commitment, and nothing below has been designed yet.
 - **[TBD — needs discussion: what stays out.** Durability, fungible balances and item ownership are
   all adjacent to equipment in FCM and are not obviously this library's. Each needs a ruling before
   any of it is lifted.]
-- **[TBD — needs discussion: whether anything may refuse to come off.** `wear()` has gates and
-  `remove()` has none, so a cursed item or a strapped-on shield cannot be modelled. FCM has no gate
-  either, so it may simply not be wanted — but adding a refusal later changes the return contract for
-  anyone already calling `remove()`.]
 - **[TBD — needs discussion: settings and their defaults**, and which of them have no safe default and
   so are refused at boot.]

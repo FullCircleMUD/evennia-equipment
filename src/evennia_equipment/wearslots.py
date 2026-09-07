@@ -38,6 +38,11 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
     #: Storage. Read through ``worn_items``, which builds it if it is absent.
     _worn_items = AttributeProperty(None)
 
+    #: The identities of what is worn, written down so it can be restored
+    #: after a world rebuild. Persisted, never ndb: it has to survive the very
+    #: event that destroys everything else about the wearer's equipment.
+    worn_equipment_record = AttributeProperty(set)
+
     @property
     def worn_items(self):
         """Slot name to the item in it, or ``None``.
@@ -220,11 +225,81 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
 
         return (False, f"You have nowhere to wear {item}.")
 
+    def update_worn_equipment_record(self):
+        """Write down the identities of what this wearer currently has on.
+
+        Rebuilt rather than added to, so the record describes the present: an
+        item taken off since the last call is not in it. An append-only version
+        would slowly accumulate gear the wearer no longer owns, which restore
+        would then look for and never find.
+
+        A consumer calls this before archiving. There is no way for the library
+        to know when that is, and nothing it could hook without learning that
+        archiving exists.
+
+        Items with no identity are skipped — there is nothing to match them by,
+        so recording anything would invent a key restore could never resolve.
+        """
+        self.worn_equipment_record = {
+            identity
+            for identity in (item.wearslot_identity for item in self.get_all_worn())
+            if identity is not None
+        }
+
+    def restore_worn(self):
+        """Put back on whatever the record says was worn.
+
+        A consumer calls this after their own restore has returned the items to
+        ``contents``. The library cannot know when that is, and an item not yet
+        back is simply not seen.
+
+        Walks ``contents`` rather than the record, so an identity matching
+        nothing is never visited and needs no handling of its own. Order does
+        not matter: the items all fitted at once when the record was written,
+        so they fit now in whatever order ``contents`` gives them.
+
+        Returns:
+            list: One ``(bool, str)`` per item attempted, straight from
+            ``wear()``. A refusal is the only diagnostic a consumer gets, and
+            it is the one that says a slot has gone or the identity attribute
+            names something the items do not carry.
+        """
+        record = self.worn_equipment_record or set()
+        return [
+            self.wear(item)
+            for item in self.contents
+            # getattr, not a plain read: a character carries rocks and bread as
+            # well as armour, and a plain carriable item has no identity to ask
+            # about — reading one raises rather than returning None.
+            if getattr(item, "wearslot_identity", None) in record
+        ]
+
+    def at_pre_remove(self, item):
+        """Whether this item may come off. Override to refuse.
+
+        The library refuses nothing of its own. A consumer overrides this for
+        a cursed item, a paralysed wearer, a rule about combat — whatever
+        their game holds.
+
+        On the wearer rather than the item, deliberately. A curse is the
+        item's business, but "you are paralysed" is the wearer's, and an
+        item-side hook could not express it. A consumer wanting item-side
+        logic delegates to the item in one line; the reverse is not available.
+
+        Args:
+            item (Object): The object about to come off.
+
+        Returns:
+            tuple: ``(bool, str)`` — the same shape ``remove()`` returns, so a
+            consumer's reason reaches the player rather than being replaced by
+            something generic.
+        """
+        return (True, "")
+
     def remove(self, item):
         """Free every slot an item occupies, leaving it in ``contents``.
 
-        Taking something off does not put it down. Nothing refuses — see the
-        open question about cursed items in the test plan.
+        Taking something off does not put it down.
 
         Args:
             item (Object): The object to take off.
@@ -236,6 +311,10 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
         worn = self.worn_items or {}
         if not self.is_worn(item):
             return (False, f"You are not wearing {item}.")
+
+        allowed, refusal = self.at_pre_remove(item)
+        if not allowed:
+            return (False, refusal)
 
         # Every slot holding it, not the first one found: a two-handed item
         # sits under two keys, and freeing one leaves a phantom in the other.

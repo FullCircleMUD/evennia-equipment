@@ -46,6 +46,11 @@ DATABASES = {
 # this during `django.setup()`, while the app registry is still being built.
 EQUIPMENT_WEARSLOTS = "tests.slot_enums.WearSlot"
 
+# The attribute an item carries as its durable identity. Required — there is
+# no name the library could invent. The suite's items carry none, which is
+# exactly the state a game without a chain or an archive is in.
+EQUIPMENT_IDENTITY_ATTRIBUTE = "token_id"
+
 # Required Django bits
 SECRET_KEY = "test-only-secret"
 TEST_ENVIRONMENT = True

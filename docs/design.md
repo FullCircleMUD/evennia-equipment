@@ -1,8 +1,8 @@
 # Design
 
-How the library is put together and why. Covers the whole mixin family, including the parts not built
-yet — each section says which. Behaviour is agreed in [test-plan.md](test-plan.md) first; this holds
-the reasoning that spans more than one case.
+How the library is put together and why. The mechanism is complete; the commands are not written.
+Behaviour is agreed in [test-plan.md](test-plan.md) first; this holds the reasoning that spans more
+than one case.
 
 ## The mixin family
 
@@ -14,8 +14,7 @@ side.
 | `EquipmentCarryingMixin` | `EquipmentCarriableMixin` | `weight` |
 | `EquipmentWearslotsMixin(EquipmentCarryingMixin)` | `EquipmentWearableMixin(EquipmentCarriableMixin)` | `wearslot` |
 
-**Built:** all five. `EquipmentContainerMixin` takes both sides of the first pair. What remains is
-recovery after an archive, and the commands.
+**Built:** all five, and equipment recovery with them. What remains is the commands.
 
 The specialisation inherits rather than composes, so a consumer makes one decision per class — *worn,
 or only carried* — and a wearable cannot be declared without the weight contract it depends on.
@@ -245,19 +244,30 @@ is in `contents` after, so the carried weight does not change.
 ## Recovering equipment after a rebuild, step by step
 
 What has to happen for a character to come back wearing what they were wearing, after an archive and
-restore — or, under `evennia-scaling`, after any move between instances. **Not built.**
+restore — or, under `evennia-scaling`, after any move between instances. No gaps in the library; the
+two `[game]` steps are the consumer's to wire up.
 
+- **[game]** `update_worn_equipment_record()` is called before archiving
+- **[library]** the identities of everything worn are written to `worn_equipment_record`
 - **[game]** the character is archived, its items held wherever the game keeps them
-- **[gap]** the identities of what was worn are recorded before the archive
 - **[game]** the world is rebuilt; every primary key is reissued
-- **[evennia-archive]** the character is restored, its slot references now meaningless
+- **[evennia-archive]** the character is restored, its slot assignments gone
 - **[game]** the items are restored into `contents`
-- **[gap]** `restore_worn()` walks `contents` and wears anything whose identity was recorded
-- **[gap]** the library reports how many it could not find
+- **[game]** `restore_worn()` is called
+- **[library]** `contents` is walked and anything whose identity is in the record is worn
+- **[library]** one `(bool, str)` per attempt comes back, refusals included
 
-The two library gaps are `update_worn_equipment_cache()` and `restore_worn()`. The identity itself is
-the consumer's — read from whatever attribute `EQUIPMENT_IDENTITY_ATTRIBUTE` names, since a database
-key cannot survive the rebuild that destroyed it.
+**Both `[game]` steps exist because the library cannot know when they happen.** Nothing it could hook
+would tell it a game is about to archive, or that an asynchronous restore has finished — and hooking
+either would mean learning that archiving exists, which is a sibling library's business, not ours.
+
+The identity is the consumer's too, read from whatever `EQUIPMENT_IDENTITY_ATTRIBUTE` names. A
+database key cannot serve, because the rebuild that makes recovery necessary is the same event that
+reissues it.
+
+**The record is written down, not derived.** Everything else in this library is rebuilt from live
+state — weight from `contents`, slots from `body_slots`. This one cannot be: it has to survive the
+moment its source is destroyed, which is the whole point of it. Persisted on the object, never `ndb`.
 
 ## Commands
 
@@ -279,11 +289,8 @@ also why there is no coupling with `evennia-targeting`.
 
 ## Not yet decided
 
-- Recovery after an archive. A restored character has an empty slot map and items with new primary
-  keys, so what was worn has to be recorded against a durable identity the consumer supplies. Agreed
-  in shape — a set of identities, rebuilt from what is worn, and a `restore_worn()` that walks
-  `contents` — and unwritten.
-- Whether anything may refuse to come off. `wear()` has gates; `remove()` has none.
+Nothing in the mechanism. The commands are agreed in shape and unwritten — six of them, in
+`contrib/`.
 - Whether the library renders equipment displays or returns data for the consumer to format. Both of
   FCM's hard imports live in its render methods.
 - The item-side gate a consumer overrides to refuse an item, and its default.

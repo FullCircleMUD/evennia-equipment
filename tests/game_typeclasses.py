@@ -10,6 +10,7 @@ at module scope.
 """
 
 from evennia import DefaultObject
+from evennia.typeclasses.attributes import AttributeProperty
 
 from evennia_equipment.carriable import (
     EquipmentCarriableMixin,
@@ -124,6 +125,14 @@ class Humanoid(EquipmentWearslotsMixin, DefaultObject):
     )
 
 
+class CursedHumanoid(Humanoid):
+    """A wearer whose gear will not come off, standing in for a consumer's
+    curse, paralysis or combat rule. RM-11, RM-12, RM-13."""
+
+    def at_pre_remove(self, item):
+        return (False, f"{item} will not come off.")
+
+
 class Dog(EquipmentWearslotsMixin, DefaultObject):
     """A wearer with a different body plan, so body_slots is proved to be
     read rather than assumed. WS-04."""
@@ -161,6 +170,28 @@ class TwinRing(WearableThing):
 
     def __hash__(self):
         return hash(TwinRing)
+
+
+class IdentifiedHelmet(Helmet):
+    """A helmet carrying the attribute EQUIPMENT_IDENTITY_ATTRIBUTE names, as
+    a game's own items do. ID-01, ER cases."""
+
+    token_id = AttributeProperty("nft:1")
+
+
+class OtherIdentifiedHelmet(Helmet):
+    """A second identified helmet, so a record can hold more than one. ER-05."""
+
+    token_id = AttributeProperty("nft:2")
+
+
+class SelfIdentifyingHelmet(Helmet):
+    """Keeps its identity somewhere the setting does not name, and overrides
+    the accessor to say so. ID-03."""
+
+    @property
+    def wearslot_identity(self):
+        return "minted-elsewhere"
 
 
 class Collar(WearableThing):

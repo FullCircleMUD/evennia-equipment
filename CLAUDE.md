@@ -13,17 +13,16 @@ Instructions for Claude (and other LLM agents) working in this repository.
 worn and what is wielded — and the carrying model that sits under them: what a character holds, what
 it weighs, and how much it can take. Tagline: **"Wearslots and carrying capacity for Evennia."**
 
-The machinery exists already, inside FullCircleMUD, and this library is where it is being extracted
-to. The weight half is here; the rest is still there.
+It was extracted from FullCircleMUD, and is now the mechanism in its own right — FCM is a consumer of
+it rather than its source.
 
 For the big-picture overview, read [README.md](README.md).
 For the design wiki, read [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
 
-**All five mixins are built and tested.** Weight, carrying, containers, wearable items and wearslots.
-Slot names come from one consumer-declared `Enum`; a subclass per body plan names which of them a
-creature has. What remains is recovery after an archive, and the commands in `contrib/`. See
+**The mechanism is complete; the commands are not written.** Five mixins, equipment recovery across
+a world rebuild, and two required settings. What remains is the six commands in `contrib/`. See
 [docs/progress.md](docs/progress.md).
 
 ## Where to read first
@@ -72,10 +71,6 @@ Every implementation decision must respect them.
 7. **Identity, never equality.** A consumer's typeclass may define `__eq__` and `__hash__` — by key,
    by token id — so "is this the object in that slot" is asked with `is`, and sets are keyed on
    `id()`. See [docs/design.md](docs/design.md) § Identity, never equality.
-
-`[TBD — needs discussion: where exactly the mechanism/content line falls, and therefore which of the
-extracted pieces are library and which stay in FCM. Drawing that line is the first task of the
-extraction. Do not settle it by writing code.]`
 
 ## Out of scope
 
@@ -136,6 +131,7 @@ evennia-equipment/
 ├── docs/                      # design wiki (humans + LLMs)
 │   ├── INDEX.md
 │   ├── design.md              # the mixin family, and why
+│   ├── installing.md          # what a consumer does, in order
 │   ├── progress.md
 │   ├── test-plan.md
 │   ├── interoperability.md

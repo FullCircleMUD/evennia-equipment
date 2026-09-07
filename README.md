@@ -5,11 +5,11 @@ underneath: what a character holds, what it weighs, and how much it can take.
 
 ## Status
 
-**Early — the mechanism works, the commands are not written.** An object declares a weight and which
-slots it occupies; a wearer declares a body plan and can wear, remove and list. The carried total
-keeps itself current through arrivals, departures, reloads and weight changes in place, and containers
-nest. Still to come: recovering what was worn after a world rebuild, and the commands a player types.
-Nothing is published. See
+**The mechanism works; the commands are not written.** An object declares a weight and which slots it
+occupies; a wearer declares a body plan and can wear, remove and list. The carried total keeps itself
+current through arrivals, departures, reloads and weight changes in place, containers nest, and a
+character's equipment survives a world rebuild. Still to come: the commands a player types. Nothing is
+published. See
 [docs/progress.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/progress.md).
 
 ## The problem it solves
@@ -61,6 +61,7 @@ python runtests.py
 
 ## Learn more
 
+- [docs/installing.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/installing.md) — everything a game does to get it running
 - [docs/INDEX.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/INDEX.md) — the design wiki
 - [docs/design.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/design.md) — the mixin family and the reasoning behind it
 - [docs/test-plan.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/test-plan.md) — every case the library commits to covering

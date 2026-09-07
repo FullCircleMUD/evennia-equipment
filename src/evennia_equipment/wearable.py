@@ -122,3 +122,24 @@ class EquipmentWearableMixin(EquipmentCarriableMixin):
     """
 
     wearslot = WearslotProperty(None)
+
+    @property
+    def wearslot_identity(self):
+        """What this item is known by across a world rebuild, or ``None``.
+
+        Read from the attribute ``EQUIPMENT_IDENTITY_ATTRIBUTE`` names — a
+        token id, an archive id, whatever the game already uses to identify an
+        item permanently. A database key cannot serve: a rebuild reissues every
+        one of them, which is the situation this exists for.
+
+        ``None`` is not a failure. An item without the attribute is worn
+        perfectly well and simply cannot be restored, because there is nothing
+        to match it by. Inventing a key would be worse — restore would look for
+        something that never existed.
+
+        A game whose items are not uniform overrides this instead of using the
+        setting.
+        """
+        from evennia_equipment.config import get_identity_attribute
+
+        return getattr(self, get_identity_attribute(), None)

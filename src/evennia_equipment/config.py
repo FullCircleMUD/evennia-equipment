@@ -33,14 +33,79 @@ from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
 
 SETTING_WEARSLOTS = "EQUIPMENT_WEARSLOTS"
+SETTING_IDENTITY = "EQUIPMENT_IDENTITY_ATTRIBUTE"
+
+#: What each collected problem is prefixed with in the refusal message. One
+#: problem per line, so a consumer with two things wrong works through a list
+#: rather than a paragraph. Named so a test can count problems without pinning
+#: any wording.
+PROBLEM_PREFIX = "\n  - "
 
 _EXAMPLE = "'world.wearslots.WearSlot'"
 
 
 def check_settings() -> None:
-    """Refuse to start when the declared slot enum is missing or unusable.
+    """Refuse to start when either required setting is missing or unusable.
 
-    Called from ``AppConfig.ready()``.
+    Called from ``AppConfig.ready()``. Every problem across both settings is
+    collected and raised together: a consumer installing this has more than
+    one thing to get right, and stopping at the first turns that into
+    fix-restart-fix-restart, once per mistake.
+    """
+    problems = []
+    cause = None
+
+    try:
+        _check_wearslots()
+    except ImproperlyConfigured as exc:
+        problems.append(str(exc))
+        cause = exc.__cause__
+
+    try:
+        _check_identity_attribute()
+    except ImproperlyConfigured as exc:
+        problems.append(str(exc))
+
+    if problems:
+        raise ImproperlyConfigured(
+            "evennia-equipment cannot start:"
+            + "".join(f"{PROBLEM_PREFIX}{problem}" for problem in problems)
+        ) from cause
+
+
+def _check_identity_attribute() -> None:
+    """Refuse an identity attribute that is missing or unusable.
+
+    Nothing here can check that items actually carry it — boot cannot see an
+    item. A name pointing at nothing yields ``None`` for every identity, and
+    the diagnostic for that is ``restore_worn()`` reporting how many it could
+    not match. The library validates what it can see.
+    """
+    from django.conf import settings
+
+    name = getattr(settings, SETTING_IDENTITY, None)
+
+    # `not name` covers unset and empty together, which are the same mistake
+    # from the library's side: nothing to read an identity from.
+    if not name:
+        raise ImproperlyConfigured(
+            f"{SETTING_IDENTITY} is not set. Name the attribute an item carries "
+            f"as its durable identity — a token id, an archive id, whatever "
+            f"survives a world rebuild, e.g. 'token_id'."
+        )
+
+    if not isinstance(name, str):
+        raise ImproperlyConfigured(
+            f"{SETTING_IDENTITY} is {name!r}. It must be the name of an "
+            f"attribute, as a string."
+        )
+
+
+def _check_wearslots() -> None:
+    """Refuse a slot enum that is missing or unusable.
+
+    These checks are sequential rather than collected: each one makes the next
+    meaningful, so only one can be wrong at a time.
     """
     from django.conf import settings
 
@@ -98,6 +163,18 @@ def check_settings() -> None:
             f"have values that are not strings. A slot name keys a dictionary "
             f"and is matched against an item's declaration, so it must be text."
         )
+
+
+def get_identity_attribute() -> str:
+    """Return ``EQUIPMENT_IDENTITY_ATTRIBUTE``. Checked at boot.
+
+    No fallback and no test: boot has already guaranteed the value is there
+    and usable. Deferring the read is the only reason this exists — a module
+    scope read would run while Django is still populating apps.
+    """
+    from django.conf import settings
+
+    return settings.EQUIPMENT_IDENTITY_ATTRIBUTE
 
 
 @lru_cache(maxsize=1)

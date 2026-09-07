@@ -14,8 +14,11 @@ from django.test import override_settings
 
 import evennia_equipment
 from evennia_equipment.config import (
+    PROBLEM_PREFIX,
+    SETTING_IDENTITY,
     SETTING_WEARSLOTS,
     check_settings,
+    get_identity_attribute,
     valid_slot_names,
 )
 from evennia_equipment.log import equipment_log
@@ -101,6 +104,41 @@ class ConfigTests(TestCase):
     def test_cf_11_an_enum_with_no_members_is_refused(self):
         """CF-11"""
         self.assertIn(SETTING_WEARSLOTS, self._refusal(f"{_ENUMS}.NoMembers"))
+
+    def _identity_refusal(self, value):
+        """Run the check with a bad identity attribute, enum otherwise fine."""
+        with _slots(f"{_ENUMS}.WearSlot"), override_settings(
+            **{SETTING_IDENTITY: value}
+        ):
+            with self.assertRaises(ImproperlyConfigured) as caught:
+                check_settings()
+        return str(caught.exception)
+
+    def test_cf_14_a_missing_identity_attribute_is_refused(self):
+        """CF-14"""
+        self.assertIn(SETTING_IDENTITY, self._identity_refusal(None))
+
+    def test_cf_15_a_non_string_identity_attribute_is_refused(self):
+        """CF-15"""
+        self.assertIn(SETTING_IDENTITY, self._identity_refusal(7))
+
+    def test_cf_16_an_empty_identity_attribute_is_refused(self):
+        """CF-16"""
+        self.assertIn(SETTING_IDENTITY, self._identity_refusal(""))
+
+    def test_cf_17_both_settings_wrong_are_reported_at_once(self):
+        """CF-17"""
+        with _slots(f"{_ENUMS}.NoMembers"), override_settings(
+            **{SETTING_IDENTITY: None}
+        ):
+            with self.assertRaises(ImproperlyConfigured) as caught:
+                check_settings()
+        self.assertEqual(str(caught.exception).count(PROBLEM_PREFIX), 2)
+
+    def test_cf_18_the_accessor_returns_the_attribute_name(self):
+        """CF-18"""
+        with override_settings(**{SETTING_IDENTITY: "token_id"}):
+            self.assertEqual(get_identity_attribute(), "token_id")
 
 
 class WearableTests(DjangoTestCase):
@@ -557,6 +595,49 @@ class RemoveTests(DjangoTestCase):
         self.assertTrue(worn)
         self.assertIs(wearer.worn_items["HEAD"], helmet)
 
+    def test_rm_10_the_hook_allows_removal_by_default(self):
+        """RM-10"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        allowed, _ = wearer.at_pre_remove(self._worn(wearer, Helmet))
+        self.assertTrue(allowed)
+
+    def test_rm_11_a_consumer_refusing_stops_the_removal(self):
+        """RM-11"""
+        from evennia import create_object
+        from tests.game_typeclasses import CursedHumanoid, Helmet
+
+        wearer = create_object(CursedHumanoid, key="cursed", nohome=True)
+        helmet = create_object(Helmet, key="helmet", location=wearer, nohome=True)
+        wearer.wear(helmet)
+        came_off, _ = wearer.remove(helmet)
+        self.assertFalse(came_off)
+        self.assertTrue(wearer.is_worn(helmet))
+
+    def test_rm_12_the_consumers_reason_is_returned(self):
+        """RM-12"""
+        from evennia import create_object
+        from tests.game_typeclasses import CursedHumanoid, Helmet
+
+        wearer = create_object(CursedHumanoid, key="cursed", nohome=True)
+        helmet = create_object(Helmet, key="helmet", location=wearer, nohome=True)
+        wearer.wear(helmet)
+        _, said = wearer.remove(helmet)
+        self.assertIn("will not come off", said)
+
+    def test_rm_13_the_slots_are_untouched_when_removal_is_refused(self):
+        """RM-13"""
+        from evennia import create_object
+        from tests.game_typeclasses import CursedHumanoid, Greatsword
+
+        wearer = create_object(CursedHumanoid, key="cursed", nohome=True)
+        sword = create_object(Greatsword, key="sword", location=wearer, nohome=True)
+        wearer.wear(sword)
+        wearer.remove(sword)
+        self.assertIs(wearer.worn_items["LEFT_HAND"], sword)
+        self.assertIs(wearer.worn_items["RIGHT_HAND"], sword)
+
     def test_rm_09_removing_one_of_two_identical_items_frees_only_that_one(self):
         """RM-09"""
         from tests.game_typeclasses import TwinRing
@@ -578,6 +659,214 @@ class RemoveTests(DjangoTestCase):
         self.assertTrue(said)
         _, refused = wearer.remove(helmet)
         self.assertTrue(refused)
+
+
+class IdentityTests(DjangoTestCase):
+    """ID, ER — what an item is known by, and writing down what is worn."""
+
+    def _wearer(self):
+        """Create one wearer. Not a test."""
+        from evennia import create_object
+        from tests.game_typeclasses import Humanoid
+
+        return create_object(Humanoid, key="wearer", nohome=True)
+
+    def _held(self, wearer, typeclass):
+        """Create an item in the wearer's contents, unworn."""
+        from evennia import create_object
+
+        return create_object(
+            typeclass, key=typeclass.__name__, location=wearer, nohome=True
+        )
+
+    def _worn(self, wearer, typeclass):
+        """Create an item in the wearer's contents and put it on."""
+        item = self._held(wearer, typeclass)
+        wearer.wear(item)
+        return item
+
+    # --- ID ---------------------------------------------------------------
+
+    def test_id_01_the_identity_is_read_from_the_named_attribute(self):
+        """ID-01"""
+        from tests.game_typeclasses import IdentifiedHelmet
+
+        wearer = self._wearer()
+        self.assertEqual(self._held(wearer, IdentifiedHelmet).wearslot_identity, "nft:1")
+
+    def test_id_02_an_item_without_the_attribute_has_no_identity(self):
+        """ID-02"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self.assertIsNone(self._held(wearer, Helmet).wearslot_identity)
+
+    def test_id_03_a_consumer_overriding_the_accessor_wins(self):
+        """ID-03"""
+        from tests.game_typeclasses import SelfIdentifyingHelmet
+
+        wearer = self._wearer()
+        self.assertEqual(
+            self._held(wearer, SelfIdentifyingHelmet).wearslot_identity,
+            "minted-elsewhere",
+        )
+
+    # --- ER ---------------------------------------------------------------
+
+    def test_er_01_nothing_worn_gives_an_empty_record(self):
+        """ER-01"""
+        wearer = self._wearer()
+        wearer.update_worn_equipment_record()
+        self.assertEqual(wearer.worn_equipment_record, set())
+
+    def test_er_02_a_worn_items_identity_is_recorded(self):
+        """ER-02"""
+        from tests.game_typeclasses import IdentifiedHelmet
+
+        wearer = self._wearer()
+        self._worn(wearer, IdentifiedHelmet)
+        wearer.update_worn_equipment_record()
+        self.assertEqual(wearer.worn_equipment_record, {"nft:1"})
+
+    def test_er_03_a_carried_item_is_not_recorded(self):
+        """ER-03"""
+        from tests.game_typeclasses import IdentifiedHelmet
+
+        wearer = self._wearer()
+        self._held(wearer, IdentifiedHelmet)
+        wearer.update_worn_equipment_record()
+        self.assertEqual(wearer.worn_equipment_record, set())
+
+    def test_er_04_an_item_with_no_identity_is_skipped(self):
+        """ER-04"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._worn(wearer, Helmet)
+        wearer.update_worn_equipment_record()
+        self.assertEqual(wearer.worn_equipment_record, set())
+
+    def test_er_05_an_item_taken_off_is_no_longer_in_the_record(self):
+        """ER-05"""
+        from tests.game_typeclasses import IdentifiedHelmet
+
+        wearer = self._wearer()
+        helmet = self._worn(wearer, IdentifiedHelmet)
+        wearer.update_worn_equipment_record()
+        wearer.remove(helmet)
+        wearer.update_worn_equipment_record()
+        self.assertEqual(wearer.worn_equipment_record, set())
+
+    def test_er_06_calling_it_twice_gives_the_same_result(self):
+        """ER-06"""
+        from tests.game_typeclasses import IdentifiedHelmet
+
+        wearer = self._wearer()
+        self._worn(wearer, IdentifiedHelmet)
+        wearer.update_worn_equipment_record()
+        wearer.update_worn_equipment_record()
+        self.assertEqual(wearer.worn_equipment_record, {"nft:1"})
+
+    def test_er_07_the_record_is_persisted_not_held_in_memory(self):
+        """ER-07"""
+        from tests.game_typeclasses import IdentifiedHelmet
+
+        wearer = self._wearer()
+        self._worn(wearer, IdentifiedHelmet)
+        wearer.update_worn_equipment_record()
+        # Straight out of the attribute handler, not the property that wrote
+        # it — an ndb value would not be there at all.
+        self.assertEqual(set(wearer.attributes.get("worn_equipment_record")), {"nft:1"})
+
+
+class RestoreWornTests(DjangoTestCase):
+    """RW — putting the recorded equipment back on after a rebuild."""
+
+    def _dressed(self):
+        """A wearer with an identified helmet on, and a record of it.
+
+        Stands in for the state just before an archive: the gear is worn and
+        written down. Not a test.
+        """
+        from evennia import create_object
+        from tests.game_typeclasses import Humanoid, IdentifiedHelmet
+
+        wearer = create_object(Humanoid, key="wearer", nohome=True)
+        helmet = create_object(
+            IdentifiedHelmet, key="helmet", location=wearer, nohome=True
+        )
+        wearer.wear(helmet)
+        wearer.update_worn_equipment_record()
+        return wearer, helmet
+
+    def _rebuilt(self):
+        """The same wearer after a rebuild: record intact, nothing worn.
+
+        The slots are emptied rather than the objects remade — what matters to
+        `restore_worn()` is a record with no matching assignments, which is
+        exactly what a restored character has.
+        """
+        wearer, helmet = self._dressed()
+        wearer.remove(helmet)
+        return wearer, helmet
+
+    def test_rw_01_an_item_in_the_record_is_worn(self):
+        """RW-01"""
+        wearer, helmet = self._rebuilt()
+        wearer.restore_worn()
+        self.assertTrue(wearer.is_worn(helmet))
+
+    def test_rw_02_an_item_not_in_the_record_stays_carried(self):
+        """RW-02"""
+        from evennia import create_object
+        from tests.game_typeclasses import OtherIdentifiedHelmet
+
+        wearer, _ = self._rebuilt()
+        stranger = create_object(
+            OtherIdentifiedHelmet, key="other", location=wearer, nohome=True
+        )
+        wearer.restore_worn()
+        self.assertFalse(wearer.is_worn(stranger))
+        self.assertIn(stranger, wearer.get_carried())
+
+    def test_rw_03_an_item_already_worn_returns_wears_refusal(self):
+        """RW-03"""
+        wearer, _ = self._dressed()
+        outcomes = wearer.restore_worn()
+        self.assertTrue(outcomes)
+        self.assertFalse(any(worn for worn, _ in outcomes))
+        self.assertIn("already wearing", outcomes[0][1])
+
+    def test_rw_04_an_item_that_cannot_be_worn_returns_wears_refusal(self):
+        """RW-04"""
+        from tests.game_typeclasses import Humanoid
+        from tests.slot_enums import WearSlot
+
+        wearer, helmet = self._rebuilt()
+        # The slot the helmet needs is gone from the body plan since the
+        # record was written.
+        with mock.patch.object(Humanoid, "body_slots", (WearSlot.BODY,)):
+            wearer.at_init()
+            outcomes = wearer.restore_worn()
+        self.assertFalse(any(worn for worn, _ in outcomes))
+        self.assertIn(helmet, wearer.get_carried())
+
+    def test_rw_06_an_item_that_is_not_wearable_is_passed_over(self):
+        """RW-06"""
+        from evennia import create_object
+        from tests.game_typeclasses import CarriableThing
+
+        wearer, helmet = self._rebuilt()
+        create_object(CarriableThing, key="rock", location=wearer, nohome=True)
+        wearer.restore_worn()
+        self.assertTrue(wearer.is_worn(helmet))
+
+    def test_rw_05_the_record_is_unchanged_by_restoring(self):
+        """RW-05"""
+        wearer, _ = self._rebuilt()
+        before = set(wearer.worn_equipment_record)
+        wearer.restore_worn()
+        self.assertEqual(set(wearer.worn_equipment_record), before)
 
 
 class WornAndCarriedTests(DjangoTestCase):
