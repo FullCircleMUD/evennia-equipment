@@ -2,6 +2,27 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-07 — remove() resolves a name too
+
+The mirror of the change below, and the last method on the surface that had the problem. 188 tests.
+
+- **`remove()` takes a string or an object**, resolved against what the wearer has on. Cases `RM-14`
+  onward, one for one with `WE-14` onward.
+- **The second pass says something different**, and that is the whole reason it exists: a string
+  matching only a carried item answers "you are not wearing the iron helmet" rather than "you have no
+  such thing". Case `RM-18`.
+- **Nothing matched says "not carrying"** in both methods, since the wearer genuinely has no such
+  thing. That is what makes the two refusals distinguishable.
+
+Two `RM` cases passed the moment they were written, which was the tell in both directions. `RM-18`
+matched the item's full key, so the existing "you are not wearing iron helmet" satisfied it without the
+carried pass ever running — searching `"iron"` and demanding the message name *helmet* is what made it
+discriminate. `RM-17` asserted only that the typed word came back, which both refusals do.
+
+An audit of the rest of the surface found nothing else to convert. `is_worn()` and `at_pre_remove()`
+take objects a caller already holds, the Evennia hooks are handed theirs by the engine, and
+`can_carry()` takes a number.
+
 ## 2026-09-07 — wear() resolves a name
 
 `wear()` takes a string or an object. 179 tests.

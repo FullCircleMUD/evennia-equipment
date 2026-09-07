@@ -336,18 +336,58 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
         """
         return (True, "")
 
+    def _resolve_worn(self, text):
+        """Find the item ``text`` names among the things this wearer has on.
+
+        The mirror of :meth:`_resolve_wearable`, and ordered for the same
+        reason. Searching only the worn items tells a player holding the boots
+        that they are not carrying them, when the useful answer is that they
+        are carrying them and not wearing them.
+
+        Args:
+            text (str): What the player typed.
+
+        Returns:
+            tuple: ``(item, None)`` when one item is the answer, or
+            ``(None, refusal)`` when none is.
+        """
+        name = f_key_matches(text)
+
+        worn = walk_contents(self, self, f_worn_by(self), name)
+        if worn:
+            if len({obj.key.lower() for obj in worn}) > 1:
+                return (None, f"Which {text} do you mean?")
+            return (worn[0], None)
+
+        carried = walk_contents(self, self, op_not(f_worn_by(self)), name)
+        if carried:
+            return (None, f"You are not wearing {carried[0]}.")
+
+        return (None, f"You are not carrying {text}.")
+
     def remove(self, item):
         """Free every slot an item occupies, leaving it in ``contents``.
 
         Taking something off does not put it down.
 
+        Takes a string or an object, on the same reasoning as :meth:`wear` and
+        with the search mirrored: a string resolves against what the wearer has
+        on rather than what it carries.
+
         Args:
-            item (Object): The object to take off.
+            item (Object or str): The object to take off, or what the player
+                typed.
 
         Returns:
             tuple: ``(bool, str)`` — whether it came off, and why not if it
             did not.
         """
+        if isinstance(item, str):
+            resolved, refusal = self._resolve_worn(item)
+            if resolved is None:
+                return (False, refusal)
+            item = resolved
+
         worn = self.worn_items or {}
         if not self.is_worn(item):
             return (False, f"You are not wearing {item}.")

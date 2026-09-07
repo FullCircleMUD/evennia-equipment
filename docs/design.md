@@ -309,9 +309,9 @@ different wording subclasses one rather than reimplementing the mechanism behind
 `obj.move_to(caller)`, so `at_pre_object_receive` already fires and the stock commands respect a
 refusal untouched.
 
-**The mixin resolves the name, so the command does not.** `wear()` takes a string or an object, and a
-string is matched against what the wearer holds with `f_key_matches` — the same filter path as
-everything else the library walks.
+**The mixin resolves the name, so the command does not.** `wear()` and `remove()` each take a string
+or an object, and a string is matched against what the wearer holds with `f_key_matches` — the same
+filter path as everything else the library walks.
 
 The alternative made every command do the work twice. A command handed only objects has to filter the
 wearer's contents to find one, and then `wear()` filters again to confirm what the caller just
@@ -324,6 +324,21 @@ caller.msg(message)
 
 An object is still accepted, because `restore_worn()` and a consumer equipping something it has just
 created both hold one already — and two identical rings are distinct objects but the same string.
+
+**Each searches its own half, in two passes.** `wear()` looks at the unworn items first, `remove()` at
+the worn ones. The second pass is what makes the refusal useful: a single pass tells someone already
+wearing the helmet that they are not carrying it, and tells someone holding the boots that they have no
+such thing. Both are false, and neither helps.
+
+| | First pass | Second pass says | Nothing matched |
+|---|---|---|---|
+| `wear()` | not worn | "You are already wearing X" | "You are not carrying `<text>`" |
+| `remove()` | worn | "You are not wearing X" | "You are not carrying `<text>`" |
+
+**Several matches are two different situations.** Items sharing a key are interchangeable, so the first
+is taken — asking which of two identical rings is meant has no answer a player can give. Differing keys
+are a real question, and the reply quotes what was typed rather than listing candidates, which could
+run to five.
 
 **The scope is what the wearer holds, and nothing wider.** Rooms, containers on the floor and other
 characters are the command's problem, and a command wanting one of those resolves it itself and passes

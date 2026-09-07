@@ -626,6 +626,21 @@ both hold the object already, and resolving by key would be ambiguous exactly wh
 `remove(item)` frees every slot the item occupies and leaves it in `contents`. Taking something off
 does not put it down.
 
+**It takes a string or an object**, on the same reasoning as `wear()` and with the search mirrored: a
+string resolves against what the wearer has on, not what it carries. A command that had to find the
+object first would filter the worn items to get one, and then `remove()` would ask the slot map again
+to confirm what the caller had just established.
+
+The passes are ordered the same way, and the second one is what makes the refusal useful:
+
+1. Match against what is worn. One or more results, that is the answer.
+2. Otherwise match against what is carried — a hit there means "you are not wearing that", which is a
+   better answer than "you have no such thing".
+3. Otherwise nothing matched.
+
+Several matches split the same way: items sharing a key are interchangeable, so the first comes off;
+differing keys are a question, and the reply echoes what was typed.
+
 `at_pre_remove(item)` is the one gate, returning `(bool, str)` — the same shape `remove()` returns, so
 a consumer's reason reaches the player rather than being replaced by something generic. It allows by
 default, and the library refuses nothing of its own.
@@ -649,6 +664,15 @@ consumer wanting item-side logic delegates to the item in one line; the reverse 
 | RM-11 | A consumer refusing stops the removal and the item stays worn | test_rm_11_a_consumer_refusing_stops_the_removal |
 | RM-12 | The consumer's reason is what `remove()` returns | test_rm_12_the_consumers_reason_is_returned |
 | RM-13 | The slots are untouched when removal is refused | test_rm_13_the_slots_are_untouched_when_removal_is_refused |
+| RM-14 | A string naming a worn item removes it | test_rm_14_a_string_naming_a_worn_item_removes_it |
+| RM-15 | Matching ignores case | test_rm_15_matching_ignores_case |
+| RM-16 | A string matching part of a key matches that item | test_rm_16_a_substring_of_the_key_matches |
+| RM-17 | A string matching nothing is refused | test_rm_17_a_string_matching_nothing_is_refused |
+| RM-18 | A string matching only a carried item is refused as not worn | test_rm_18_a_string_matching_only_a_carried_item_says_not_worn |
+| RM-19 | Of several matches sharing a key, the first is removed | test_rm_19_of_several_matches_sharing_a_key_the_first_is_removed |
+| RM-20 | Matches with differing keys are refused with the word that was typed | test_rm_20_matches_with_differing_keys_are_refused_with_the_typed_word |
+| RM-21 | A worn item wins over a carried one matching the same string | test_rm_21_a_worn_item_wins_over_a_carried_one |
+| RM-22 | An object is removed without being resolved | test_rm_22_an_object_is_removed_without_being_resolved |
 
 `RM-02` is the counterpart to `WE-02`: a two-handed item sits under two keys, and freeing only the
 first leaves a phantom holding the other hand for good.
@@ -666,6 +690,21 @@ half-freed.
 or by a token id — and comparing slots with `==` would then clear every slot holding an item that
 merely *compares* equal. The library asks "is this the object in that slot", so the comparison is
 `is`, and this is the case that says so.
+
+`RM-18` is `WE-18` seen from the other side, and the one a single-pass implementation gets wrong.
+Searching only the worn items tells a player holding the boots that no such thing exists, when the
+useful answer is that they are carrying them and not wearing them.
+
+`RM-21` is the ordering that `RM-18` implies. Wearing one iron ring and carrying another, `remove ring`
+has exactly one sensible target, and a merged pass could return either.
+
+`RM-19` and `RM-20` are the two halves of "several matched", as `WE-19` and `WE-20` are for wearing.
+Asking which of two identical rings is meant has no answer a player can give; two differently named
+items do.
+
+`RM-22` keeps the object path intact. A consumer stripping a specific item — a curse breaking, a
+scripted disarm — holds the object already, and resolving by key would be ambiguous exactly where
+objects are not.
 
 ### GW — what is worn
 
