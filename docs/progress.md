@@ -2,6 +2,26 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-07 — wear() takes a named slot
+
+`wear(item, slot=...)` puts an item somewhere in particular. 195 tests.
+
+- **Group order is a preference, and a player does not always mean it.** A shortsword declaring
+  `[["WIELD"], ["HOLD"]]` goes to the wield hand whenever it is free, so asking to hold it gets it
+  wielded. A ring always lands on the first free finger rather than the one asked for. Case `WE-23`.
+- **Naming a slot narrows to the groups containing it**, not to the slot alone, so a greatsword named
+  by one hand still takes both. Case `WE-24`.
+- **Two refusals, kept apart.** "You have no `DOG_NECK`" is about the wearer's body; "the helmet
+  cannot be worn on your `LEFT_HAND`" is about the item. Cases `WE-25`, `WE-26`.
+- **An enum member or its value.** `body_slots` is declared with members and `worn_items` is keyed by
+  their values, so whichever the library demanded would be the other one to somebody. Case `WE-28`.
+
+`WE-23` is the case that separates a real implementation from one that merely checks the named slot
+is free. Both hands empty and `LEFT_HAND` declared first, the ring has to land on the right one.
+
+This is what makes `wield` and `hold` more than `wear` with a different word printed, and it reaches a
+command syntax nothing else here does — `wear ring on right finger`.
+
 ## 2026-09-07 — remove() resolves a name too
 
 The mirror of the change below, and the last method on the surface that had the problem. 188 tests.

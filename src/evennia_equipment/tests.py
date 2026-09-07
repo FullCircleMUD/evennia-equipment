@@ -623,6 +623,95 @@ class WearTests(DjangoTestCase):
         self.assertTrue(worn)
         self.assertIs(wearer.worn_items["LEFT_HAND"], second)
 
+    # --- naming a slot -----------------------------------------------------
+
+    def test_we_23_a_named_slot_is_chosen_over_an_earlier_free_group(self):
+        """WE-23"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        ring = self._held(wearer, Ring)
+        # Both hands free, and LEFT_HAND is declared first. Naming the right
+        # one has to beat the item author's preference or the argument does
+        # nothing an implementation that merely checks the slot wouldn't.
+        worn, _ = wearer.wear(ring, slot="RIGHT_HAND")
+        self.assertTrue(worn)
+        self.assertIs(wearer.worn_items["RIGHT_HAND"], ring)
+        self.assertIsNone(wearer.worn_items["LEFT_HAND"])
+
+    def test_we_24_naming_one_slot_of_a_group_fills_the_whole_group(self):
+        """WE-24"""
+        from tests.game_typeclasses import Greatsword
+
+        wearer = self._wearer()
+        sword = self._held(wearer, Greatsword)
+        worn, _ = wearer.wear(sword, slot="RIGHT_HAND")
+        self.assertTrue(worn)
+        self.assertIs(wearer.worn_items["RIGHT_HAND"], sword)
+        self.assertIs(wearer.worn_items["LEFT_HAND"], sword)
+
+    def test_we_25_a_named_slot_the_item_does_not_declare_is_refused(self):
+        """WE-25"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, Helmet)
+        worn, message = wearer.wear(helmet, slot="LEFT_HAND")
+        self.assertFalse(worn)
+        self.assertIn("LEFT_HAND", message)
+        self.assertIsNone(wearer.worn_items["LEFT_HAND"])
+        self.assertIsNone(wearer.worn_items["HEAD"])
+
+    def test_we_26_a_named_slot_this_wearer_does_not_have_is_refused(self):
+        """WE-26"""
+        from tests.game_typeclasses import Collar
+
+        wearer = self._wearer()
+        collar = self._held(wearer, Collar)
+        worn, message = wearer.wear(collar, slot="DOG_NECK")
+        self.assertFalse(worn)
+        # The item declares DOG_NECK; this wearer has no such place. A player
+        # naming a slot their body does not have needs to hear that, not that
+        # the collar cannot go there.
+        self.assertIn("DOG_NECK", message)
+        self.assertIn("have no", message.lower())
+
+    def test_we_27_a_named_slot_already_occupied_is_refused(self):
+        """WE-27"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        first, second = self._held(wearer, Ring), self._held(wearer, Ring)
+        wearer.wear(first)
+        worn, message = wearer.wear(second, slot="LEFT_HAND")
+        self.assertFalse(worn)
+        self.assertTrue(message)
+        # The free right hand is not a substitute — a named slot is a demand,
+        # not a preference.
+        self.assertIs(wearer.worn_items["LEFT_HAND"], first)
+        self.assertIsNone(wearer.worn_items["RIGHT_HAND"])
+
+    def test_we_28_a_slot_named_as_an_enum_member_works(self):
+        """WE-28"""
+        from tests.game_typeclasses import Ring
+        from tests.slot_enums import WearSlot
+
+        wearer = self._wearer()
+        ring = self._held(wearer, Ring)
+        worn, _ = wearer.wear(ring, slot=WearSlot.RIGHT_HAND)
+        self.assertTrue(worn)
+        self.assertIs(wearer.worn_items["RIGHT_HAND"], ring)
+
+    def test_we_29_a_slot_can_be_named_while_the_item_is_a_string(self):
+        """WE-29"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        ring = self._named(wearer, Ring, "iron ring")
+        worn, _ = wearer.wear("iron ring", slot="RIGHT_HAND")
+        self.assertTrue(worn)
+        self.assertIs(wearer.worn_items["RIGHT_HAND"], ring)
+
 
 class RemoveTests(DjangoTestCase):
     """RM — freeing the slots an item occupies."""

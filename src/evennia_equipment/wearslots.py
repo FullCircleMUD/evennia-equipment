@@ -221,7 +221,7 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
 
         return (None, f"You are not carrying {text}.")
 
-    def wear(self, item):
+    def wear(self, item, slot=None):
         """Put an item into the first group of slots that will take it.
 
         Takes a string or an object. A string is resolved against what this
@@ -232,8 +232,18 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
         both hold one, and two identical rings are distinct objects but the
         same string.
 
+        **``slot`` overrides the item author's preference.** Without it, the
+        first group that fits wins, so a shortsword declaring
+        ``[["WIELD"], ["HOLD"]]`` goes to the wield hand whenever that hand is
+        free — and a player asking to hold it gets it wielded. Naming a slot
+        narrows the candidate groups to those *containing* it, and selection
+        proceeds as before over what is left.
+
         Args:
             item (Object or str): The object to wear, or what the player typed.
+            slot (str or Enum, optional): The place it must go. An enum member
+                or its value; both are accepted. ``None`` takes the first group
+                that fits.
 
         Returns:
             tuple: ``(bool, str)`` — whether it was worn, and why not if it was
@@ -256,6 +266,22 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
             return (False, f"{item} is not something you can wear.")
 
         slots = self.worn_items or {}
+
+        if slot is not None:
+            # An enum member or its value. A consumer declares body_slots with
+            # members and reads worn_items keyed by their values, so demanding
+            # either one would be the wrong one to somebody.
+            slot = getattr(slot, "value", slot)
+
+            if slot not in slots:
+                return (False, f"You have no {slot}.")
+
+            # Narrow to the groups containing it, rather than to the slot
+            # alone: a group is taken whole, so a greatsword named by one hand
+            # still takes both.
+            groups = [group for group in groups if slot in group]
+            if not groups:
+                return (False, f"{item} cannot be worn on your {slot}.")
 
         # Choose before writing anything. Filling slots as they are checked
         # would leave a two-handed item in one hand when the other turns out

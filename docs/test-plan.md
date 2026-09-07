@@ -571,6 +571,21 @@ slot exists on this wearer and is free. Group order is therefore the item author
 `[["RIGHT_FINGER"], ["LEFT_FINGER"]]` favours the right hand — and the library holds no opinion about
 it.
 
+**`slot=` overrides that preference.** Naming a slot narrows the candidate groups to those *containing*
+it, and selection proceeds as before over what is left. Without it, nothing changes.
+
+Group order alone cannot express "not the obvious one". A shortsword declaring
+`[["WIELD"], ["HOLD"]]` goes to the wield hand whenever that hand is free, so a player asking to hold
+it gets it wielded — and a ring is always put on the first free finger, never the one asked for. The
+argument is what lets a command mean a particular place.
+
+**A slot is named as an enum member or as its value.** `body_slots` is declared with members and
+`worn_items` is keyed by their values, so a consumer holds one and the library holds the other. Taking
+both costs a line and removes a trap that would otherwise bite once per consumer.
+
+Two refusals, kept apart because the player's fix differs: an item that cannot go there at all, and a
+wearer that has no such place.
+
 | ID | Case | Test function |
 |---|---|---|
 | WE-01 | A single-slot item fills that slot | test_we_01_a_single_slot_item_fills_that_slot |
@@ -595,6 +610,13 @@ it.
 | WE-20 | Matches with differing keys are refused with the word that was typed | test_we_20_matches_with_differing_keys_are_refused_with_the_typed_word |
 | WE-21 | A carried item wins over a worn one matching the same string | test_we_21_a_carried_item_wins_over_a_worn_one |
 | WE-22 | An object is worn without being resolved | test_we_22_an_object_is_worn_without_being_resolved |
+| WE-23 | A named slot is chosen over an earlier free group | test_we_23_a_named_slot_is_chosen_over_an_earlier_free_group |
+| WE-24 | Naming one slot of a multi-slot group fills the whole group | test_we_24_naming_one_slot_of_a_group_fills_the_whole_group |
+| WE-25 | A named slot the item does not declare is refused | test_we_25_a_named_slot_the_item_does_not_declare_is_refused |
+| WE-26 | A named slot this wearer does not have is refused | test_we_26_a_named_slot_this_wearer_does_not_have_is_refused |
+| WE-27 | A named slot that is already occupied is refused | test_we_27_a_named_slot_already_occupied_is_refused |
+| WE-28 | A slot named as an enum member works as its value does | test_we_28_a_slot_named_as_an_enum_member_works |
+| WE-29 | A slot can be named while the item is given as a string | test_we_29_a_slot_can_be_named_while_the_item_is_a_string |
 
 `WE-05` is the one that bites if the implementation fills slots as it checks them: a group that turns
 out to be blocked half-way through would leave the wearer holding an item in some of its slots and
@@ -620,6 +642,22 @@ listing candidates.
 
 `WE-22` keeps the object path intact. `restore_worn()` and a consumer equipping a freshly created item
 both hold the object already, and resolving by key would be ambiguous exactly where objects are not.
+
+`WE-23` is the case the argument exists for, and the one an implementation that merely *checks* the
+named slot would pass by accident. A ring with both fingers free must go on the one that was asked for,
+not the one declared first.
+
+`WE-24` fixes what naming a slot means: the group containing it, not the slot alone. A greatsword
+named by one hand still takes both, because a group is taken together or not at all — the same rule
+`WE-05` pins for the unnamed case.
+
+`WE-25` and `WE-26` are separate because the answers are. "That cannot go there" is about the item;
+"you have no such place" is about the wearer, and it is what a player naming a slot the game does not
+give them needs to hear. One message for both would be wrong half the time.
+
+`WE-28` is a trap that would otherwise bite once per consumer. A game declares `body_slots` with enum
+members and reads `worn_items` keyed by their values, so whichever the library demanded would be the
+other one to somebody.
 
 ### RM — removing
 

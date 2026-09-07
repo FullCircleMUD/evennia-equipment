@@ -199,6 +199,24 @@ hand, so `two_handed` needs no flag, no command checks and no display note.
 **Selection completes before anything is written.** Filling slots while checking them would leave a
 two-handed item in one hand when the other turned out to be occupied.
 
+**`wear(item, slot=...)` names a place.** Group order is the item author's preference, and preference
+is not always what a player means: a shortsword declaring `[["WIELD"], ["HOLD"]]` goes to the wield
+hand whenever that hand is free, so asking to *hold* it gets it wielded — and a ring always lands on
+the first free finger rather than the one asked for. Naming a slot narrows the candidate groups to
+those **containing** it, then selection proceeds unchanged.
+
+Containing, not equal to: a group is taken whole, so a greatsword named by one hand still takes both.
+The two refusals stay apart because the fixes differ — "you have no `DOG_NECK`" is about the wearer's
+body, "the helmet cannot be worn on your `LEFT_HAND`" is about the item, and one message for both
+would be wrong half the time.
+
+A slot is given as an enum member or as its value. A consumer declares `body_slots` with members and
+reads `worn_items` keyed by their values, so whichever the library demanded would be the other one to
+somebody.
+
+This is what makes `wield` and `hold` more than `wear` with a different word printed, and it opens a
+command syntax the library does not otherwise reach — `wear ring on right finger`.
+
 `get_all_worn()` and `get_carried()` are both built by walking `contents`, not the slot map. That
 deduplicates a multi-slot item, keeps a deleted object from reappearing, and makes the two a partition
 — they differ by one `not`, so nothing a wearer holds can fall through both.
