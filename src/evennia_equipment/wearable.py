@@ -27,9 +27,9 @@ from evennia_equipment.carriable import EquipmentCarriableMixin
 class WearslotProperty(AttributeProperty):
     """A slot declaration, checked for shape and for names that exist.
 
-    Two checks, both here. The format, and whether every name appears in some
-    declared layout — an item does not know which creature will wear it, so
-    the union of every layout is as far as it can go.
+    Two checks, both here. The format, and whether every name is in the
+    declared slot enum — an item does not know which creature will wear it, so
+    the enum is as far as it can go.
     """
 
     def at_set(self, value, obj):
@@ -43,10 +43,10 @@ class WearslotProperty(AttributeProperty):
             list: The validated declaration.
 
         Raises:
-            AttributeError: If the shape is wrong, or a slot name appears in
-                no declared layout.
+            AttributeError: If the shape is wrong, or a slot name is not in
+                the declared slot enum.
         """
-        from evennia_equipment.config import known_slot_names
+        from evennia_equipment.config import valid_slot_names
 
         # Sequence rather than list: a class-level default is run through
         # from_pickle by _get_and_cache_default, which returns a _SaverList —
@@ -70,7 +70,7 @@ class WearslotProperty(AttributeProperty):
                 f"wearable and does not need the mixin."
             )
 
-        known = known_slot_names()
+        known = valid_slot_names()
 
         for group in value:
             # The same string trap one level down: ['HEAD'] is a group, but
@@ -105,9 +105,9 @@ class WearslotProperty(AttributeProperty):
             unknown = sorted(slot for slot in group if slot not in known)
             if unknown:
                 raise AttributeError(
-                    f"{self._key} names {', '.join(unknown)}, which no declared "
-                    f"layout holds. Add the slot to a layout in "
-                    f"EQUIPMENT_WEARSLOTS first, or correct the spelling."
+                    f"{self._key} names {', '.join(unknown)}, which the slot "
+                    f"enum does not hold. Add it to the enum named by "
+                    f"EQUIPMENT_WEARSLOTS, or correct the spelling."
                 )
 
         return value

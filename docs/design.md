@@ -129,24 +129,38 @@ exactly two modes, and an override also serves "half the weight".
 
 ## Slots and wearing
 
-A consumer declares their body plans in one module, named by one setting:
+**One enum names every slot the game will ever have**, declared by the consumer and pointed at by one
+setting. It is the single list both sides are checked against — a wearer's slots and an item's
+declaration — which is what makes a typo in either one reportable.
 
 ```python
-EQUIPMENT_WEARSLOTS = "world.wearslots.LAYOUTS"       # settings.py
+EQUIPMENT_WEARSLOTS = "world.wearslots.WearSlot"  # settings.py
 
-LAYOUTS = {                                            # world/wearslots.py
-    "humanoid": ["HEAD", "BODY", "LEFT_HAND", "RIGHT_HAND"],
-    "dog": ["DOG_NECK", "DOG_BODY"],
-}
+class WearSlot(Enum):                              # world/wearslots.py
+    HEAD = "HEAD"
+    BODY = "BODY"
+    LEFT_HAND = "LEFT_HAND"
+    DOG_NECK = "DOG_NECK"
 ```
 
-A typeclass names which one it uses — `wearslot_layout = "humanoid"` — and the mixin derives its slots
-from it on every read. **Only what is occupied is stored.** A slot added to a layout is therefore
-usable by characters that already exist, once the server restarts; a stored slot dictionary would
-leave them without it for good.
+**A subclass per body plan** names which of them that creature has:
 
-The layouts resolve once per process. Nothing can change a setting while the server is up, so there is
-nothing to invalidate.
+```python
+class HumanoidEquipmentMixin(EquipmentWearslotsMixin):
+    body_slots = (WearSlot.HEAD, WearSlot.BODY, WearSlot.LEFT_HAND)
+```
+
+Enum members rather than strings, so a typo is an `AttributeError` on the line that wrote it. The
+declaration is checked in `__init_subclass__` — when the class is defined, which is the earliest the
+library can see it, since nothing at boot can enumerate a consumer's typeclasses.
+
+`worn_items` is the storage: a real, persisted dictionary of slot name to the item in it or `None`.
+Built once, then mutated — `wear()` assigns an item, `remove()` assigns `None`. Reads are a plain
+attribute read, because a body plan changes when code changes, which is a restart.
+
+`at_init()` reconciles the two once per load: it adds slots the class has gained and drops ones it has
+lost, and returns without writing when the names already match. An item in a dropped slot simply stops
+being worn — nothing moves, because a worn item never left `contents`.
 
 An item declares its slots as a **list of groups** — each group one option, every slot in a group
 taken together. `wear()` walks the groups in order and takes the first where every slot both exists on
@@ -163,6 +177,87 @@ two-handed item in one hand when the other turned out to be occupied.
 `get_all_worn()` and `get_carried()` are both built by walking `contents`, not the slot map. That
 deduplicates a multi-slot item, keeps a deleted object from reappearing, and makes the two a partition
 — they differ by one `not`, so nothing a wearer holds can fall through both.
+
+## Identity, never equality
+
+Everywhere the library asks "is this the object in that slot", it asks by identity. `is`, not `==`;
+`id()` in a set, not the objects themselves.
+
+A consumer's typeclass is free to define `__eq__` and `__hash__`, and comparing by key or by token id
+is a reasonable thing for a game to do. Under equality, two rings that compare the same would break
+three things at once: `wear()` refuses the second as already worn, `remove()` frees both slots, and
+`get_carried()` drops the unworn one from the player's inventory.
+
+Evennia's idmapper gives one Python instance per database row, so identity is exactly the right
+question and `id()` is stable for as long as anything holds a reference.
+
+## Booting, step by step
+
+Every step from `django.setup()` to the library being usable, and who owns each — **[library]** for
+this library, **[Evennia]** for Evennia or Django, **[game]** for the consumer. No gaps.
+
+- **[Evennia]** `django.setup()` runs, which runs every installed app's `ready()`
+- **[library]** `ready()` calls `check_settings()`
+- **[library]** `EQUIPMENT_WEARSLOTS` is read; absent is a refusal
+- **[library]** the path is resolved with `import_string`; a failure is a refusal with the cause chained
+- **[library]** the result is checked: an `Enum`, with members, no repeated values, every value a string
+- **[Evennia]** the server continues, or does not start at all
+- **[game]** a typeclass module is imported later, on first use
+- **[library]** `__init_subclass__` checks that module's `body_slots` against the enum
+
+The two checks are deliberately in different places because they can be. The enum is settings, so it
+is available at boot; a consumer's typeclasses are not enumerable from anywhere, so the earliest the
+library sees one is the moment Python defines it.
+
+## Picking something up, step by step
+
+What happens when a player types `get sword`. No gaps — and note the library ships no command here,
+because Evennia's already drives every hook it needs.
+
+- **[Evennia]** `CmdGet` resolves the name and calls `obj.move_to(caller)`
+- **[Evennia]** `move_to` calls `at_pre_object_receive` on the destination
+- **[library]** the object is refused if it has no `EquipmentCarriableMixin`, and the refusal is logged
+- **[library]** a refusal from anything further down the chain is passed on rather than overruled
+- **[Evennia]** the move happens, or is aborted
+- **[Evennia]** `at_object_receive` fires on the destination
+- **[library]** the carried weight is rebuilt from `contents`
+- **[Evennia]** `CmdGet` messages the room
+
+Dropping is the same list with `at_object_leave`, which fires *before* the object leaves — so the
+rebuild is told to exclude it.
+
+## Wearing, step by step
+
+What happens when a consumer's command calls `wear(item)`. No gaps.
+
+- **[game]** the command resolves what the player named, using Evennia's search
+- **[game]** the command calls `caller.wear(item)`
+- **[library]** the item is refused unless it is in `contents` and not already worn
+- **[library]** the item's `wearslot` groups are read; an item declaring none is refused
+- **[library]** each group is tested — every slot in it must exist on this wearer and be free
+- **[library]** the first whole group that passes is filled, all slots at once
+- **[library]** `(True, message)` goes back, or `(False, why not)`
+- **[game]** the command speaks
+
+Selection completes before anything is written. Nothing moves: the item was in `contents` before and
+is in `contents` after, so the carried weight does not change.
+
+## Recovering equipment after a rebuild, step by step
+
+What has to happen for a character to come back wearing what they were wearing, after an archive and
+restore — or, under `evennia-scaling`, after any move between instances. **Not built.**
+
+- **[game]** the character is archived, its items held wherever the game keeps them
+- **[gap]** the identities of what was worn are recorded before the archive
+- **[game]** the world is rebuilt; every primary key is reissued
+- **[evennia-archive]** the character is restored, its slot references now meaningless
+- **[game]** the items are restored into `contents`
+- **[gap]** `restore_worn()` walks `contents` and wears anything whose identity was recorded
+- **[gap]** the library reports how many it could not find
+
+The two library gaps are `update_worn_equipment_cache()` and `restore_worn()`. The identity itself is
+the consumer's — read from whatever attribute `EQUIPMENT_IDENTITY_ATTRIBUTE` names, since a database
+key cannot survive the rebuild that destroyed it.
 
 ## Commands
 

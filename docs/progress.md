@@ -2,6 +2,34 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-07 — one enum instead of a layouts mapping
+
+The wearing half was reworked. Slot names now come from a single consumer-declared `Enum`, and a
+subclass per body plan names which of them that creature has. 133 tests.
+
+- **`EQUIPMENT_WEARSLOTS` names an enum**, not a mapping of layouts. The boot check drops from seven
+  guards to four — a bare-string layout, a non-string entry, a repeated name and an empty layout are
+  all impossible in an enum. Cases `CF`, down from thirteen to eight.
+- **A subclass per body plan** — `body_slots = (WearSlot.HEAD, ...)` — replaces a `wearslot_layout`
+  key naming an entry in a settings dict. This is FCM's own shape, and it deleted the layout key, the
+  derived slot dictionary, the reconciliation-on-read and the settings-based indirection with it.
+- **`__init_subclass__` checks the declaration at import**, which is the earliest the library can see
+  a typeclass — nothing at boot can enumerate them. Four refusals, each naming the class and the slot.
+- **`worn_items` is a real stored dictionary**, built once and mutated. `at_init()` reconciles it
+  against `body_slots` once per load and returns without writing when they match. Cases `WS`.
+- **Identity, never equality.** `RM-09` was written on a hunch and failed twice: `remove()` compared
+  with `==`, and then `is_worn()` did too, so `wear()` was refusing a second identical ring as already
+  worn. Four call sites now compare by identity, and `get_all_worn()` / `get_carried()` key a set on
+  `id()` rather than the objects, since a set uses `__hash__` and `__eq__` — both of which a
+  consumer's typeclass may define. `GW-06` and `GC-06` were mutation-checked to prove they are not
+  vacuous.
+- **`_occupied_ids()` filters on `is not None`, not truthiness.** A consumer's typeclass defining
+  `__bool__` — an empty container — would otherwise have a worn item appear in the inventory.
+
+The rework was done as a checklist: the `Test function` column was cleared for all 65 affected cases,
+then each prefix was reviewed, retired or reframed, its tests updated and its link refilled. The
+linter reported the remaining work from both ends throughout.
+
 ## 2026-09-06 — slots, wearing and removing
 
 `EquipmentWearableMixin` and `EquipmentWearslotsMixin` are built and tested. 129 tests.

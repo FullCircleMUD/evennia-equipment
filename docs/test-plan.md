@@ -27,9 +27,9 @@ Behaviour is agreed here first, before any test or code — see
 | `EW` | `effective_weight` — what an object contributes to whoever holds it |
 | `WC` | `at_weight_changed` — a weight changing while the object is held |
 | `CN` | `EquipmentContainerMixin` — an object that is both carried and carrying |
-| `CF` | The wearslot layouts a consumer declares, and the boot check that refuses a bad one |
+| `CF` | The slot enum a consumer declares, and the boot check that refuses a bad one |
 | `WR` | `EquipmentWearableMixin` — an item's slot declaration, and what may be stored in it |
-| `WS` | `EquipmentWearslotsMixin` — a wearer's slots, derived from its declared layout |
+| `WS` | `EquipmentWearslotsMixin` — a wearer's slots, from the body plan its subclass declares |
 | `WE` | `wear()` — choosing a group of slots and filling it |
 | `RM` | `remove()` — freeing the slots an item occupies |
 | `GW` | `get_all_worn()` — what a wearer has on |
@@ -60,36 +60,31 @@ rather than faking one. It imports Evennia, so tests import it inside a test bod
 | `Nowhere` | Carries no mixin: both somewhere to move an object to, and the object a carrier refuses |
 | `WearableThing` | Carries `EquipmentWearableMixin` and declares no slots — the undeclared case |
 | `Helm` | A class-level slot declaration, so the check is proved to run on a default |
-| `MistypedHelm` | A class-level declaration naming a slot no layout holds |
+| `MistypedHelm` | A class-level declaration naming a slot the enum does not hold |
 | `Helmet` | One group of one slot — the ordinary wearable |
 | `Greatsword` | One group taking two slots at once |
 | `Ring` | Two groups of one, so a second lands on the other hand |
 | `Collar` | Declares a slot no humanoid has |
-| `Humanoid` | A wearer using the humanoid layout |
-| `Dog` | A wearer using a different layout, so the key is proved to be read |
-| `Unicorn` | A wearer naming a layout nobody declared |
-| `Unlayouted` | A wearer naming no layout at all |
+| `TwinRing` | A ring comparing equal to any other of its kind, as a consumer's typeclass may |
+| `Humanoid` | A wearer with the humanoid body plan |
+| `Dog` | A wearer with a different body plan, so `body_slots` is proved to be read |
 
-**`tests/wearslot_layouts.py`** — the layouts the `CF` cases point `EQUIPMENT_WEARSLOTS` at, standing
-in for a consumer's own module. It **imports nothing at all**: `check_settings()` resolves it during
-`django.setup()`, while the app registry is still being built, so anything it imported would be pulled
-in at the worst possible moment.
+**`tests/slot_enums.py`** — the enums the `CF` cases point `EQUIPMENT_WEARSLOTS` at, standing in for a
+consumer's own module. It **imports nothing but `enum`**: `check_settings()` resolves it during
+`django.setup()`, while the app registry is still being built, so anything else it imported would be
+pulled in at the worst possible moment.
 
 | Value | What it is |
 |---|---|
-| `LAYOUTS` | Two well-formed layouts. What the suite boots with |
-| `EMPTY` | A mapping declaring no layouts |
-| `EMPTY_LAYOUT` | A named layout with no slots in it |
-| `NOT_A_MAPPING` | A list where a mapping is required |
-| `BARE_STRING_LAYOUT` | A layout given as a string rather than a list of names |
-| `NON_STRING_ENTRY` | A layout holding something that is not a slot name |
-| `REPEATED_NAME` | A layout naming the same slot twice |
-| `SEVERAL_PROBLEMS` | Two layouts wrong in two different ways, for the one-refusal case |
-| `LAYOUT_WITH_A_NEW_SLOT` | The humanoid layout with a slot added, for the restart case |
+| `WearSlot` | Every slot any creature in the suite has. What it boots with |
+| `NoMembers` | An enum declaring nothing — legal Python, useless as a slot list |
+| `NonStringValue` | A member whose value is not a string, so it cannot key a slot dict |
+| `RepeatedValue` | Two names, one value — Python folds the second into an alias |
+| `NOT_AN_ENUM` | Not an enum at all, as a consumer gets by naming the wrong thing |
 
-The `_layouts()` helper in the suite swaps the setting and clears the resolved cache on the way in and
-out. That simulates a restart with a different layout, which is the only way a layout ever changes —
-`get_wearslot_layouts()` holds its answer for the life of the process.
+The `_slots()` helper in the suite swaps the setting and clears the resolved cache on the way in and
+out. That simulates a restart with a different enum, which is the only way the slots ever change —
+`valid_slot_names()` holds its answer for the life of the process.
 
 ## Cases
 
@@ -355,48 +350,50 @@ covered by `CN-10`.
 
 ### CF — the declared layouts
 
-A slot layout is content the library cannot invent, so it comes from the consumer as a setting naming
-a module path — see [library-standards.md](../../../design/library-standards.md) §
-*Consumer-authored config*.
+The slot names a game uses are content the library cannot invent, so they come from the consumer as a
+setting naming an enum — see [library-standards.md](../../../design/library-standards.md) §
+*Consumer-authored config*, and the same shape as `evennia-survival`'s stages.
 
 ```python
-EQUIPMENT_WEARSLOTS = "world.wearslots.LAYOUTS"       # settings.py
+EQUIPMENT_WEARSLOTS = "world.wearslots.WearSlot"  # settings.py
 
-LAYOUTS = {                                            # world/wearslots.py
-    "humanoid": ["HEAD", "FACE", "NECK", ...],
-    "dog": ["DOG_NECK", "DOG_BODY"],
-}
+class WearSlot(Enum):                              # world/wearslots.py
+    HEAD = "HEAD"
+    BODY = "BODY"
+    LEFT_HAND = "LEFT_HAND"
+    DOG_NECK = "DOG_NECK"
 ```
 
-One setting rather than one per creature type: a game has as many layouts as it has body plans, and
-they resolve inside the consumer's own module rather than in `settings.py`.
+**One enum for every slot the game will ever have.** Which of them a given creature gets is a
+subclass's business — see `WS`. This is the single list both sides are checked against: a wearer's
+slots and an item's declaration.
 
-**The bar is that nothing downstream crashes**, plus two checks that go past it deliberately — a bare
-string and a repeated name both produce a silently wrong layout rather than an error, which is worse
-to find.
+No base class: a slot carries one thing, its name. Survival needs one because a stage carries three.
+
+**The bar is that nothing downstream crashes**, plus `CF-07`, which goes past it deliberately.
 
 | ID | Case | Test function |
 |---|---|---|
 | CF-01 | A missing `EQUIPMENT_WEARSLOTS` is refused at boot | test_cf_01_a_missing_setting_is_refused |
 | CF-02 | A path that does not resolve is refused, with the original error chained | test_cf_02_an_unresolvable_path_is_refused_with_the_cause |
-| CF-03 | A layouts object that is not a mapping is refused | test_cf_03_a_layouts_object_that_is_not_a_mapping_is_refused |
-| CF-04 | An empty mapping is accepted — a game may declare no layouts yet | test_cf_04_an_empty_mapping_is_accepted |
-| CF-05 | A layout given as a bare string is refused | test_cf_05_a_layout_given_as_a_bare_string_is_refused |
-| CF-06 | A layout containing a non-string entry is refused | test_cf_06_a_layout_with_a_non_string_entry_is_refused |
-| CF-07 | A layout with a repeated slot name is refused | test_cf_07_a_layout_with_a_repeated_name_is_refused |
-| CF-08 | Every problem is reported in one refusal, not the first only | test_cf_08_every_problem_is_reported_at_once |
+| CF-03 | Something that is not an `Enum` is refused | test_cf_03_something_that_is_not_an_enum_is_refused |
+| CF-06 | An enum member whose value is not a string is refused | test_cf_06_a_non_string_member_value_is_refused |
+| CF-07 | An enum with a repeated value is refused | test_cf_07_a_repeated_member_value_is_refused |
 | CF-09 | A valid configuration boots | test_cf_09_a_valid_configuration_boots |
-| CF-10 | The accessor returns the resolved layouts | test_cf_10_the_accessor_returns_the_resolved_layouts |
-| CF-11 | A layout declaring no slots is refused | test_cf_11_a_layout_with_no_slots_is_refused |
-| CF-12 | The known slot names are every slot across every layout | test_cf_12_the_known_slot_names_span_every_layout |
-| CF-13 | The known slot names are empty when no layouts are declared | test_cf_13_the_known_slot_names_are_empty_without_layouts |
+| CF-10 | The accessor returns the enum's values | test_cf_10_the_accessor_returns_the_enums_values |
+| CF-11 | An enum with no members is refused | test_cf_11_an_enum_with_no_members_is_refused |
 
-`CF-05` is the trap the standards name: a bare string is iterable, has a length, and membership against
-it succeeds one letter at a time, so `{"humanoid": "HEAD"}` yields four slots called `H`, `E`, `A` and
-`D` and nothing complains.
+Retired: `CF-04` (no mapping to be empty), `CF-05` (a plain string is caught by `CF-03`), `CF-08`
+(the checks are sequential, so only one can be wrong at a time), `CF-12` and `CF-13` (one accessor,
+covered by `CF-10`).
 
-`CF-07` is the same class of failure. A repeated name is folded by the dict, leaving a creature with
-fewer slots than its layout appears to declare.
+`CF-07` is the one worth having. Enum member *names* cannot repeat, but *values* can, and Python
+silently makes the second an alias — `HEAD = "HEAD"` followed by `SKULL = "HEAD"` leaves one member
+where the declaration reads as two. The check reads `__members__` rather than iterating the members,
+because by the time you iterate, the duplicate has already been folded away.
+
+`CF-06` exists because an enum's values are not necessarily strings. Slot names are dictionary keys
+and are matched against item declarations, so `HEAD = 7` has to be refused rather than half-work.
 
 `CF-11` refuses a named layout with no slots in it, which is a typo rather than a decision — a
 creature that wears nothing does not carry the mixin. `CF-04` still accepts an empty *mapping*: a game
@@ -420,9 +417,9 @@ wearslot = [["HEAD", "BODY", "LEGS"]]            # a suit of plate
 rather than tidying a shape. Refusing it says so at the point the mistake is made, and matches `CF-05`
 refusing a bare-string layout rather than reading it letter by letter.
 
-Two checks, both in `at_set()`. The format, and whether the names exist in *any* declared layout — an
-item does not know which creature will wear it, so the union is as far as it can go. Whether *this*
-creature has the slots is `wear()`'s job.
+Two checks, both in `at_set()`. The format, and whether every name is in the declared slot enum. The
+enum is as far as an item-side check can go — an item does not know which creature will wear it.
+Whether *this* creature has the slots is `wear()`'s job.
 
 | ID | Case | Test function |
 |---|---|---|
@@ -432,14 +429,15 @@ creature has the slots is `wear()`'s job.
 | WR-04 | A group holding a non-string is refused | test_wr_04_a_group_holding_a_non_string_is_refused |
 | WR-05 | A declaration with no groups is refused | test_wr_05_a_declaration_with_no_groups_is_refused |
 | WR-06 | A group with no slots is refused | test_wr_06_a_group_with_no_slots_is_refused |
-| WR-07 | A slot name no declared layout holds is refused | test_wr_07_a_slot_no_layout_holds_is_refused |
-| WR-08 | A slot name from any layout is accepted, whichever creature it belongs to | test_wr_08_a_slot_from_any_layout_is_accepted |
+| WR-07 | A slot name the enum does not hold is refused | test_wr_07_a_slot_the_enum_does_not_hold_is_refused |
+| WR-08 | A slot name in the enum is accepted, whether or not any creature has it | test_wr_08_a_slot_in_the_enum_is_accepted |
 | WR-09 | A class-level default is validated the first time it is read | test_wr_09_a_class_default_is_validated_on_first_read |
 | WR-10 | A slot repeated inside one group is refused | test_wr_10_a_slot_repeated_in_one_group_is_refused |
 | WR-11 | A declaration set through `.db` bypasses validation | test_wr_11_a_declaration_set_through_db_bypasses_validation |
 
 `WR-08` is the scope of the name check: an item declaring `DOG_NECK` is valid even in a game whose
-players are humanoid, because the item genuinely does not know its wearer.
+players are humanoid, because the item genuinely does not know its wearer. It is what would fail if
+someone later "improved" the check to consult a particular wearer's slots.
 
 `WR-09` matters because a typo in a typeclass would otherwise wait for someone to assign to it.
 `AttributeProperty.__get__` autocreates by calling `__set__`, so the first read of any instance runs
@@ -452,35 +450,64 @@ would otherwise be folded silently, leaving a group that occupies less than it r
 
 ### WS — a wearer's slots
 
-A typeclass names which layout it uses; the mixin derives its slots from it.
+A consumer writes one subclass per body plan, naming the slots that creature has:
 
 ```python
-class Character(EquipmentWearslotsMixin, DefaultCharacter):
-    wearslot_layout = "humanoid"
+class HumanoidEquipmentMixin(EquipmentWearslotsMixin):
+    body_slots = (WearSlot.HEAD, WearSlot.BODY, WearSlot.LEFT_HAND, WearSlot.RIGHT_HAND)
 ```
 
-**The slot names are not persisted.** Only what is occupied is stored, and the full set of slots is
-read from the layout each time. So a slot added to a layout appears on characters that already exist,
-rather than being silently unusable because their dictionary was built before it was declared.
+`body_slots` is the declaration — enum members, so a typo is an `AttributeError` where it is written.
+`worn_items` is the storage: a real, persisted dictionary of slot name to the item in it or `None`,
+built once and mutated from then on. `wear()` assigns an item, `remove()` assigns `None`.
+
+**`at_init()` reconciles the two**, once per load rather than on every read. It builds the dictionary
+when there isn't one, adds slots the class has gained and drops slots it has lost. When the declared
+names already match the dictionary's keys it returns without writing, which is every load but the
+first after a code change.
+
+An item in a dropped slot simply stops being worn. Nothing moves — a worn item never left `contents`,
+so it is already in inventory.
 
 | ID | Case | Test function |
 |---|---|---|
-| WS-01 | A wearer's slots come from its declared layout | test_ws_01_slots_come_from_the_declared_layout |
+| WS-01 | A wearer's slots come from its `body_slots` | test_ws_01_slots_come_from_body_slots |
 | WS-02 | Every slot starts empty | test_ws_02_every_slot_starts_empty |
-| WS-03 | Slots keep the order the layout declares them in | test_ws_03_slots_keep_the_layouts_order |
-| WS-04 | Two wearers with different layouts have different slots | test_ws_04_different_layouts_give_different_slots |
-| WS-05 | A layout name no declared layout holds is refused | test_ws_05_an_undeclared_layout_name_is_refused |
-| WS-06 | A wearer declaring no layout at all is refused | test_ws_06_a_wearer_with_no_layout_is_refused |
-| WS-07 | A slot added to a layout appears on a wearer that already exists | test_ws_07_a_slot_added_to_a_layout_appears_on_existing_wearers |
+| WS-03 | Slots keep the order `body_slots` declares them in | test_ws_03_slots_keep_the_declared_order |
+| WS-04 | Two wearers with different `body_slots` have different slots | test_ws_04_different_body_slots_give_different_slots |
+| WS-11 | An absent or empty dictionary is populated on load | test_ws_11_an_empty_dictionary_is_populated_on_load |
+| WS-12 | A slot added to `body_slots` is added on load | test_ws_12_a_slot_added_to_body_slots_is_added_on_load |
+| WS-13 | A slot removed from `body_slots` is removed on load | test_ws_13_a_slot_removed_from_body_slots_is_removed_on_load |
+| WS-14 | An item in a removed slot stops being worn and stays carried | test_ws_14_an_item_in_a_removed_slot_stops_being_worn |
+| WS-15 | A subclass declaring a slot the enum does not hold is refused at import | test_ws_15_a_slot_the_enum_does_not_hold_is_refused_at_import |
+| WS-16 | Reconciliation leaves existing assignments in place | test_ws_16_reconciliation_leaves_existing_assignments_alone |
+| WS-17 | A subclass declaring no slots is refused at import | test_ws_17_a_subclass_declaring_no_slots_is_refused |
+| WS-18 | A subclass declaring a plain string instead of an enum member is refused | test_ws_18_a_plain_string_instead_of_an_enum_member_is_refused |
+| WS-19 | A subclass repeating a slot is refused | test_ws_19_a_repeated_slot_is_refused |
 
-`WS-03` matters because the display reads in declaration order — head to toe rather than alphabetical
-— and because a later change to a set or a comprehension would lose it silently.
+Every import-time refusal names the class, the slot at fault and what to do about it. A consumer
+meeting one has written a typeclass, not called an API, so the message has to be readable where it
+lands — in a traceback during startup, with no context but itself.
 
-`WS-07` is what the derived-not-persisted choice buys, and the case exists so it is not later
-"optimised" into a stored dictionary.
+Retired: `WS-05` through `WS-10`. There is no layout key to be wrong, and the earlier reconciliation
+design ran on every read rather than once per load.
 
-`WS-06` fires on first read rather than at boot. Nothing at boot can enumerate a consumer's
-typeclasses, so this is the earliest the library can see one.
+`WS-03` matters because the display reads in declaration order — head to toe rather than alphabetical.
+
+`WS-11` is what covers an object that predates the mixin. `at_object_creation` fires once and has
+already run for such an object, so it would never get a dictionary; `at_init` fires on every load.
+
+`WS-15` fires at class-definition time, via `__init_subclass__`. Nothing at boot can enumerate a
+consumer's typeclasses, so the moment their module is imported is the earliest the library can see one.
+It is the mirror of `WR-07` — both sides checked against the same enum, so a typo on either is
+reported where it was written.
+
+`WS-16` is the one that costs a player their gear if it is wrong. Adding a slot must add a key, not
+rebuild the dictionary — a rebuild would pass `WS-12` and quietly strip everything the character had
+on.
+
+`WS-18` exists because the failure without it is obscure: `body_slots = ("HEAD",)` dies on `s.value`
+deep inside the mixin, naming neither the class nor the line that wrote it.
 
 ### WE — wearing
 
@@ -536,6 +563,7 @@ which is deliberately unanswered rather than answered with a hook nobody calls.
 | RM-06 | Other worn items are unaffected | test_rm_06_other_worn_items_are_unaffected |
 | RM-07 | A removed item can be worn again | test_rm_07_a_removed_item_can_be_worn_again |
 | RM-08 | Both outcomes return a message | test_rm_08_both_outcomes_return_a_message |
+| RM-09 | Removing one of two identical items frees only that one | test_rm_09_removing_one_of_two_identical_items_frees_only_that_one |
 
 `RM-02` is the counterpart to `WE-02`: a two-handed item sits under two keys, and freeing only the
 first leaves a phantom holding the other hand for good.
@@ -545,6 +573,11 @@ while quietly stripping everything else the wearer had on.
 
 `RM-07` is the round trip. An item whose slots are freed but which is still referenced somewhere else
 reads as worn, so `wear()` refuses it — a failure neither `RM-01` nor `WE-08` sees on its own.
+
+`RM-09` is about identity rather than equality. A consumer's typeclass may define `__eq__` — by key,
+or by a token id — and comparing slots with `==` would then clear every slot holding an item that
+merely *compares* equal. The library asks "is this the object in that slot", so the comparison is
+`is`, and this is the case that says so.
 
 ### GW — what is worn
 
@@ -562,6 +595,7 @@ figure.
 | GW-03 | A multi-slot item is listed once, not once per slot | test_gw_03_a_multi_slot_item_is_listed_once |
 | GW-04 | A carried but unworn item is not listed | test_gw_04_a_carried_item_is_not_listed |
 | GW-05 | A deleted item drops out | test_gw_05_a_deleted_item_drops_out |
+| GW-06 | Of two items that compare equal, only the worn one is listed | test_gw_06_of_two_equal_items_only_the_worn_one_is_listed |
 
 ### GC — what is carried
 
@@ -575,12 +609,19 @@ as against everything the object holds.
 | GC-03 | A worn item is not listed | test_gc_03_a_worn_item_is_not_listed |
 | GC-04 | A multi-slot worn item is not listed | test_gc_04_a_multi_slot_worn_item_is_not_listed |
 | GC-05 | Worn and carried together account for everything in contents | test_gc_05_worn_and_carried_account_for_all_contents |
+| GC-06 | Of two items that compare equal, the unworn one is listed | test_gc_06_of_two_equal_items_the_unworn_one_is_listed |
 
 `GC-05` is the invariant that matters: the two are a partition, so nothing in `contents` can fall
 through both and become invisible to a player.
 
 `GC-04` guards the implementation that asks "is this in the first slot it declared" rather than "is
 this worn at all" — a greatsword would then show up in the inventory listing as well as both hands.
+
+`GW-06` and `GC-06` are the two halves of one failure. Both lists are built by asking whether an
+object is among the worn ones, and a set membership test uses `__hash__` and `__eq__` — which a
+consumer's typeclass may define by key or by token id. Two rings that compare equal, one worn, would
+then both read as worn: the carried one disappearing from the player's inventory and the worn one
+appearing twice. The comparison is by identity for that reason.
 
 ## Open decisions
 

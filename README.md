@@ -29,8 +29,11 @@ The library supplies the mechanism: the slots, the carried set and the distincti
 the weight and capacity arithmetic over them. The game supplies the content — what an item is, what
 it is made of, what wearing it does, and what happens to a character who is carrying too much.
 
-Slots are declared as a list of groups. Each group is one way of wearing the thing, and every slot in
-a group is taken together — so a ring declares `[["LEFT_FINGER"], ["RIGHT_FINGER"]]` and fits either
+You declare every slot your game has as one enum, and a small subclass per body plan naming which of
+them each creature gets — humanoid, dog, horse.
+
+An item's slots are a list of groups. Each group is one way of wearing the thing, and every slot in a
+group is taken together — so a ring declares `[["LEFT_FINGER"], ["RIGHT_FINGER"]]` and fits either
 hand, while a greatsword declares `[["WIELD", "HOLD"]]` and takes both. Two-handed weapons and
 "a dog cannot wear a helmet" both fall out of that, with no rule of their own.
 

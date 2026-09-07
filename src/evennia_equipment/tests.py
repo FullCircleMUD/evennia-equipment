@@ -6,7 +6,6 @@ the coverage trail reads in both directions.
 """
 
 from contextlib import contextmanager
-from contextlib import contextmanager
 from unittest import TestCase, mock
 
 from django.core.exceptions import ImproperlyConfigured
@@ -15,33 +14,31 @@ from django.test import override_settings
 
 import evennia_equipment
 from evennia_equipment.config import (
-    PROBLEM_PREFIX,
     SETTING_WEARSLOTS,
     check_settings,
-    get_wearslot_layouts,
-    known_slot_names,
+    valid_slot_names,
 )
 from evennia_equipment.log import equipment_log
 
-_LAYOUTS = "tests.wearslot_layouts"
+_ENUMS = "tests.slot_enums"
 
 
 @contextmanager
-def _layouts(path):
+def _slots(path):
     """Point EQUIPMENT_WEARSLOTS at ``path`` for the block.
 
-    Simulates a restart with a different layout, which is the only way a
-    layout ever changes. ``get_wearslot_layouts`` holds its answer for the
-    life of the process, so clearing the cache is what makes this a faithful
-    stand-in rather than a workaround — and it is cleared on the way out too,
-    or the swapped layouts would outlive the block.
+    Simulates a restart with a different slot enum, which is the only way the
+    slots ever change. ``valid_slot_names`` holds its answer for the life of
+    the process, so clearing the cache is what makes this a faithful stand-in
+    rather than a workaround — and it is cleared on the way out too, or the
+    swapped enum would outlive the block.
     """
-    get_wearslot_layouts.cache_clear()
+    valid_slot_names.cache_clear()
     try:
         with override_settings(**{SETTING_WEARSLOTS: path}):
             yield
     finally:
-        get_wearslot_layouts.cache_clear()
+        valid_slot_names.cache_clear()
 
 
 class ScaffoldTests(TestCase):
@@ -57,11 +54,11 @@ class ScaffoldTests(TestCase):
 
 
 class ConfigTests(TestCase):
-    """CF — the declared layouts, and the boot check that refuses a bad one."""
+    """CF — the declared slot enum, and the boot check that refuses a bad one."""
 
     def _refusal(self, value):
         """Run the check against one setting value and return the message."""
-        with override_settings(**{SETTING_WEARSLOTS: value}):
+        with _slots(value):
             with self.assertRaises(ImproperlyConfigured) as caught:
                 check_settings()
         return str(caught.exception)
@@ -72,64 +69,38 @@ class ConfigTests(TestCase):
 
     def test_cf_02_an_unresolvable_path_is_refused_with_the_cause(self):
         """CF-02"""
-        with override_settings(**{SETTING_WEARSLOTS: "tests.no_such_module.LAYOUTS"}):
+        with _slots("tests.no_such_module.WearSlot"):
             with self.assertRaises(ImproperlyConfigured) as caught:
                 check_settings()
         self.assertIsNotNone(caught.exception.__cause__)
 
-    def test_cf_03_a_layouts_object_that_is_not_a_mapping_is_refused(self):
+    def test_cf_03_something_that_is_not_an_enum_is_refused(self):
         """CF-03"""
-        self.assertIn(
-            SETTING_WEARSLOTS, self._refusal(f"{_LAYOUTS}.NOT_A_MAPPING")
-        )
+        self.assertIn(SETTING_WEARSLOTS, self._refusal(f"{_ENUMS}.NOT_AN_ENUM"))
 
-    def test_cf_04_an_empty_mapping_is_accepted(self):
-        """CF-04"""
-        with override_settings(**{SETTING_WEARSLOTS: f"{_LAYOUTS}.EMPTY"}):
-            self.assertIsNone(check_settings())
-
-    def test_cf_05_a_layout_given_as_a_bare_string_is_refused(self):
-        """CF-05"""
-        self.assertIn("humanoid", self._refusal(f"{_LAYOUTS}.BARE_STRING_LAYOUT"))
-
-    def test_cf_06_a_layout_with_a_non_string_entry_is_refused(self):
+    def test_cf_06_a_non_string_member_value_is_refused(self):
         """CF-06"""
-        self.assertIn("humanoid", self._refusal(f"{_LAYOUTS}.NON_STRING_ENTRY"))
+        self.assertIn("BODY", self._refusal(f"{_ENUMS}.NonStringValue"))
 
-    def test_cf_07_a_layout_with_a_repeated_name_is_refused(self):
+    def test_cf_07_a_repeated_member_value_is_refused(self):
         """CF-07"""
-        self.assertIn("HEAD", self._refusal(f"{_LAYOUTS}.REPEATED_NAME"))
-
-    def test_cf_08_every_problem_is_reported_at_once(self):
-        """CF-08"""
-        message = self._refusal(f"{_LAYOUTS}.SEVERAL_PROBLEMS")
-        self.assertEqual(message.count(PROBLEM_PREFIX), 2)
+        self.assertIn("SKULL", self._refusal(f"{_ENUMS}.RepeatedValue"))
 
     def test_cf_09_a_valid_configuration_boots(self):
         """CF-09"""
-        with override_settings(**{SETTING_WEARSLOTS: f"{_LAYOUTS}.LAYOUTS"}):
+        with _slots(f"{_ENUMS}.WearSlot"):
             self.assertIsNone(check_settings())
 
-    def test_cf_10_the_accessor_returns_the_resolved_layouts(self):
+    def test_cf_10_the_accessor_returns_the_enums_values(self):
         """CF-10"""
-        with override_settings(**{SETTING_WEARSLOTS: f"{_LAYOUTS}.LAYOUTS"}):
-            self.assertIn("dog", get_wearslot_layouts())
-
-    def test_cf_11_a_layout_with_no_slots_is_refused(self):
-        """CF-11"""
-        self.assertIn("humanoid", self._refusal(f"{_LAYOUTS}.EMPTY_LAYOUT"))
-
-    def test_cf_12_the_known_slot_names_span_every_layout(self):
-        """CF-12"""
-        with _layouts(f"{_LAYOUTS}.LAYOUTS"):
-            names = known_slot_names()
+        with _slots(f"{_ENUMS}.WearSlot"):
+            names = valid_slot_names()
         self.assertIn("HEAD", names)
         self.assertIn("DOG_NECK", names)
 
-    def test_cf_13_the_known_slot_names_are_empty_without_layouts(self):
-        """CF-13"""
-        with _layouts(f"{_LAYOUTS}.EMPTY"):
-            self.assertEqual(known_slot_names(), set())
+    def test_cf_11_an_enum_with_no_members_is_refused(self):
+        """CF-11"""
+        self.assertIn(SETTING_WEARSLOTS, self._refusal(f"{_ENUMS}.NoMembers"))
 
 
 class WearableTests(DjangoTestCase):
@@ -175,11 +146,11 @@ class WearableTests(DjangoTestCase):
         """WR-06"""
         self._refused([[]])
 
-    def test_wr_07_a_slot_no_layout_holds_is_refused(self):
+    def test_wr_07_a_slot_the_enum_does_not_hold_is_refused(self):
         """WR-07"""
         self.assertIn("HAED", self._refused([["HAED"]]))
 
-    def test_wr_08_a_slot_from_any_layout_is_accepted(self):
+    def test_wr_08_a_slot_in_the_enum_is_accepted(self):
         """WR-08"""
         item = self._item()
         item.wearslot = [["DOG_NECK"]]
@@ -205,7 +176,7 @@ class WearableTests(DjangoTestCase):
 
 
 class WearslotsTests(DjangoTestCase):
-    """WS — a wearer's slots, derived from its declared layout."""
+    """WS — a wearer's slots, from the body plan its subclass declares."""
 
     def _wearer(self, typeclass=None):
         """Create one wearer. Not a test."""
@@ -214,52 +185,133 @@ class WearslotsTests(DjangoTestCase):
 
         return create_object(typeclass or Humanoid, key="wearer", nohome=True)
 
-    def test_ws_01_slots_come_from_the_declared_layout(self):
+    def _subclass(self, slots):
+        """Declare a wearslots subclass with these body_slots.
+
+        Declared inside a test body because the ones that are wrong cannot
+        exist at module scope — the module would not import.
+        """
+        from evennia_equipment.wearslots import EquipmentWearslotsMixin
+
+        return type("Declared", (EquipmentWearslotsMixin,), {"body_slots": slots})
+
+    def test_ws_01_slots_come_from_body_slots(self):
         """WS-01"""
         self.assertEqual(
-            set(self._wearer().wearslots),
+            set(self._wearer().worn_items),
             {"HEAD", "BODY", "LEFT_HAND", "RIGHT_HAND"},
         )
 
     def test_ws_02_every_slot_starts_empty(self):
         """WS-02"""
-        self.assertTrue(all(item is None for item in self._wearer().wearslots.values()))
+        self.assertTrue(all(item is None for item in self._wearer().worn_items.values()))
 
-    def test_ws_03_slots_keep_the_layouts_order(self):
+    def test_ws_03_slots_keep_the_declared_order(self):
         """WS-03"""
         self.assertEqual(
-            list(self._wearer().wearslots),
+            list(self._wearer().worn_items),
             ["HEAD", "BODY", "LEFT_HAND", "RIGHT_HAND"],
         )
 
-    def test_ws_04_different_layouts_give_different_slots(self):
+    def test_ws_04_different_body_slots_give_different_slots(self):
         """WS-04"""
         from tests.game_typeclasses import Dog
 
-        self.assertEqual(set(self._wearer(Dog).wearslots), {"DOG_NECK", "DOG_BODY"})
+        self.assertEqual(set(self._wearer(Dog).worn_items), {"DOG_NECK", "DOG_BODY"})
 
-    def test_ws_05_an_undeclared_layout_name_is_refused(self):
-        """WS-05"""
-        from tests.game_typeclasses import Unicorn
+    def test_ws_11_an_empty_dictionary_is_populated_on_load(self):
+        """WS-11"""
+        wearer = self._wearer()
+        # An object that predates the mixin: at_object_creation has already
+        # run for it and will not run again.
+        wearer.db.worn_items = None
+        wearer.at_init()
+        self.assertEqual(
+            set(wearer.worn_items), {"HEAD", "BODY", "LEFT_HAND", "RIGHT_HAND"}
+        )
+
+    def test_ws_12_a_slot_added_to_body_slots_is_added_on_load(self):
+        """WS-12"""
+        from tests.game_typeclasses import Humanoid
+        from tests.slot_enums import WearSlot
+
+        wearer = self._wearer()
+        self.assertNotIn("DOG_NECK", wearer.worn_items)
+        with mock.patch.object(
+            Humanoid, "body_slots", Humanoid.body_slots + (WearSlot.DOG_NECK,)
+        ):
+            wearer.at_init()
+            self.assertIn("DOG_NECK", wearer.worn_items)
+
+    def test_ws_13_a_slot_removed_from_body_slots_is_removed_on_load(self):
+        """WS-13"""
+        from tests.game_typeclasses import Humanoid
+        from tests.slot_enums import WearSlot
+
+        wearer = self._wearer()
+        with mock.patch.object(Humanoid, "body_slots", (WearSlot.HEAD,)):
+            wearer.at_init()
+            self.assertEqual(set(wearer.worn_items), {"HEAD"})
+
+    def test_ws_14_an_item_in_a_removed_slot_stops_being_worn(self):
+        """WS-14"""
+        from evennia import create_object
+        from tests.game_typeclasses import Helmet, Humanoid
+        from tests.slot_enums import WearSlot
+
+        wearer = self._wearer()
+        helmet = create_object(Helmet, key="helmet", location=wearer, nohome=True)
+        wearer.wear(helmet)
+        with mock.patch.object(Humanoid, "body_slots", (WearSlot.BODY,)):
+            wearer.at_init()
+        self.assertFalse(wearer.is_worn(helmet))
+        self.assertIn(helmet, wearer.contents)
+
+    def test_ws_15_a_slot_the_enum_does_not_hold_is_refused_at_import(self):
+        """WS-15"""
+        from enum import Enum
+
+        class Rogue(Enum):
+            HAED = "HAED"
 
         with self.assertRaises(AttributeError) as caught:
-            self._wearer(Unicorn).wearslots
-        self.assertIn("unicorn", str(caught.exception))
+            self._subclass((Rogue.HAED,))
+        self.assertIn("HAED", str(caught.exception))
 
-    def test_ws_06_a_wearer_with_no_layout_is_refused(self):
-        """WS-06"""
-        from tests.game_typeclasses import Unlayouted
+    def test_ws_16_reconciliation_leaves_existing_assignments_alone(self):
+        """WS-16"""
+        from evennia import create_object
+        from tests.game_typeclasses import Helmet, Humanoid
+        from tests.slot_enums import WearSlot
 
-        with self.assertRaises(AttributeError):
-            self._wearer(Unlayouted).wearslots
-
-    def test_ws_07_a_slot_added_to_a_layout_appears_on_existing_wearers(self):
-        """WS-07"""
         wearer = self._wearer()
-        self.assertNotIn("TAIL", wearer.wearslots)
-        # A restart with the slot added to the layout module.
-        with _layouts(f"{_LAYOUTS}.LAYOUT_WITH_A_NEW_SLOT"):
-            self.assertIn("TAIL", wearer.wearslots)
+        helmet = create_object(Helmet, key="helmet", location=wearer, nohome=True)
+        wearer.wear(helmet)
+        with mock.patch.object(
+            Humanoid, "body_slots", Humanoid.body_slots + (WearSlot.DOG_NECK,)
+        ):
+            wearer.at_init()
+        self.assertIs(wearer.worn_items["HEAD"], helmet)
+
+    def test_ws_17_a_subclass_declaring_no_slots_is_refused(self):
+        """WS-17"""
+        with self.assertRaises(AttributeError) as caught:
+            self._subclass(())
+        self.assertIn("body_slots", str(caught.exception))
+
+    def test_ws_18_a_plain_string_instead_of_an_enum_member_is_refused(self):
+        """WS-18"""
+        with self.assertRaises(AttributeError) as caught:
+            self._subclass(("HEAD",))
+        self.assertIn("HEAD", str(caught.exception))
+
+    def test_ws_19_a_repeated_slot_is_refused(self):
+        """WS-19"""
+        from tests.slot_enums import WearSlot
+
+        with self.assertRaises(AttributeError) as caught:
+            self._subclass((WearSlot.HEAD, WearSlot.HEAD))
+        self.assertIn("HEAD", str(caught.exception))
 
 
 class WearTests(DjangoTestCase):
@@ -288,7 +340,7 @@ class WearTests(DjangoTestCase):
         helmet = self._held(wearer, Helmet)
         worn, _ = wearer.wear(helmet)
         self.assertTrue(worn)
-        self.assertIs(wearer.wearslots["HEAD"], helmet)
+        self.assertIs(wearer.worn_items["HEAD"], helmet)
 
     def test_we_02_a_multi_slot_item_fills_every_slot_in_its_group(self):
         """WE-02"""
@@ -297,8 +349,8 @@ class WearTests(DjangoTestCase):
         wearer = self._wearer()
         sword = self._held(wearer, Greatsword)
         wearer.wear(sword)
-        self.assertIs(wearer.wearslots["LEFT_HAND"], sword)
-        self.assertIs(wearer.wearslots["RIGHT_HAND"], sword)
+        self.assertIs(wearer.worn_items["LEFT_HAND"], sword)
+        self.assertIs(wearer.worn_items["RIGHT_HAND"], sword)
 
     def test_we_03_the_first_free_group_is_chosen(self):
         """WE-03"""
@@ -307,8 +359,8 @@ class WearTests(DjangoTestCase):
         wearer = self._wearer()
         ring = self._held(wearer, Ring)
         wearer.wear(ring)
-        self.assertIs(wearer.wearslots["LEFT_HAND"], ring)
-        self.assertIsNone(wearer.wearslots["RIGHT_HAND"])
+        self.assertIs(wearer.worn_items["LEFT_HAND"], ring)
+        self.assertIsNone(wearer.worn_items["RIGHT_HAND"])
 
     def test_we_04_a_later_group_is_chosen_when_the_first_is_taken(self):
         """WE-04"""
@@ -318,8 +370,8 @@ class WearTests(DjangoTestCase):
         first, second = self._held(wearer, Ring), self._held(wearer, Ring)
         wearer.wear(first)
         wearer.wear(second)
-        self.assertIs(wearer.wearslots["LEFT_HAND"], first)
-        self.assertIs(wearer.wearslots["RIGHT_HAND"], second)
+        self.assertIs(wearer.worn_items["LEFT_HAND"], first)
+        self.assertIs(wearer.worn_items["RIGHT_HAND"], second)
 
     def test_we_05_a_partly_blocked_group_is_not_partly_filled(self):
         """WE-05"""
@@ -331,8 +383,8 @@ class WearTests(DjangoTestCase):
         wearer.wear(ring)
         worn, _ = wearer.wear(sword)
         self.assertFalse(worn)
-        self.assertIs(wearer.wearslots["LEFT_HAND"], ring)
-        self.assertIsNone(wearer.wearslots["RIGHT_HAND"])
+        self.assertIs(wearer.worn_items["LEFT_HAND"], ring)
+        self.assertIsNone(wearer.worn_items["RIGHT_HAND"])
 
     def test_we_06_a_group_naming_a_missing_slot_is_skipped(self):
         """WE-06"""
@@ -351,7 +403,7 @@ class WearTests(DjangoTestCase):
         loose = create_object(Helmet, key="helmet", nohome=True)
         worn, _ = wearer.wear(loose)
         self.assertFalse(worn)
-        self.assertIsNone(wearer.wearslots["HEAD"])
+        self.assertIsNone(wearer.worn_items["HEAD"])
 
     def test_we_08_an_item_already_worn_is_refused(self):
         """WE-08"""
@@ -380,7 +432,7 @@ class WearTests(DjangoTestCase):
         wearer.wear(first)
         worn, _ = wearer.wear(second)
         self.assertFalse(worn)
-        self.assertIs(wearer.wearslots["HEAD"], first)
+        self.assertIs(wearer.worn_items["HEAD"], first)
 
     def test_we_11_wearing_does_not_move_the_item(self):
         """WE-11"""
@@ -442,7 +494,7 @@ class RemoveTests(DjangoTestCase):
         helmet = self._worn(wearer, Helmet)
         came_off, _ = wearer.remove(helmet)
         self.assertTrue(came_off)
-        self.assertIsNone(wearer.wearslots["HEAD"])
+        self.assertIsNone(wearer.worn_items["HEAD"])
 
     def test_rm_02_removing_frees_every_slot_it_occupied(self):
         """RM-02"""
@@ -451,8 +503,8 @@ class RemoveTests(DjangoTestCase):
         wearer = self._wearer()
         sword = self._worn(wearer, Greatsword)
         wearer.remove(sword)
-        self.assertIsNone(wearer.wearslots["LEFT_HAND"])
-        self.assertIsNone(wearer.wearslots["RIGHT_HAND"])
+        self.assertIsNone(wearer.worn_items["LEFT_HAND"])
+        self.assertIsNone(wearer.worn_items["RIGHT_HAND"])
 
     def test_rm_03_removing_something_not_worn_is_refused(self):
         """RM-03"""
@@ -492,7 +544,7 @@ class RemoveTests(DjangoTestCase):
         helmet = self._worn(wearer, Helmet)
         ring = self._worn(wearer, Ring)
         wearer.remove(helmet)
-        self.assertIs(wearer.wearslots["LEFT_HAND"], ring)
+        self.assertIs(wearer.worn_items["LEFT_HAND"], ring)
 
     def test_rm_07_a_removed_item_can_be_worn_again(self):
         """RM-07"""
@@ -503,7 +555,18 @@ class RemoveTests(DjangoTestCase):
         wearer.remove(helmet)
         worn, _ = wearer.wear(helmet)
         self.assertTrue(worn)
-        self.assertIs(wearer.wearslots["HEAD"], helmet)
+        self.assertIs(wearer.worn_items["HEAD"], helmet)
+
+    def test_rm_09_removing_one_of_two_identical_items_frees_only_that_one(self):
+        """RM-09"""
+        from tests.game_typeclasses import TwinRing
+
+        wearer = self._wearer()
+        first = self._worn(wearer, TwinRing)
+        second = self._worn(wearer, TwinRing)
+        wearer.remove(first)
+        self.assertIsNone(wearer.worn_items["LEFT_HAND"])
+        self.assertIs(wearer.worn_items["RIGHT_HAND"], second)
 
     def test_rm_08_both_outcomes_return_a_message(self):
         """RM-08"""
@@ -580,6 +643,15 @@ class WornAndCarriedTests(DjangoTestCase):
         helmet.delete()
         self.assertEqual(wearer.get_all_worn(), [])
 
+    def test_gw_06_of_two_equal_items_only_the_worn_one_is_listed(self):
+        """GW-06"""
+        from tests.game_typeclasses import TwinRing
+
+        wearer = self._wearer()
+        worn = self._worn(wearer, TwinRing)
+        self._held(wearer, TwinRing)
+        self.assertEqual(wearer.get_all_worn(), [worn])
+
     # --- GC ---------------------------------------------------------------
 
     def test_gc_01_empty_contents_gives_an_empty_result(self):
@@ -609,6 +681,15 @@ class WornAndCarriedTests(DjangoTestCase):
         wearer = self._wearer()
         self._worn(wearer, Greatsword)
         self.assertEqual(wearer.get_carried(), [])
+
+    def test_gc_06_of_two_equal_items_the_unworn_one_is_listed(self):
+        """GC-06"""
+        from tests.game_typeclasses import TwinRing
+
+        wearer = self._wearer()
+        self._worn(wearer, TwinRing)
+        carried = self._held(wearer, TwinRing)
+        self.assertEqual(wearer.get_carried(), [carried])
 
     def test_gc_05_worn_and_carried_account_for_all_contents(self):
         """GC-05"""

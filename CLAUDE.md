@@ -22,7 +22,8 @@ For the design wiki, read [docs/INDEX.md](docs/INDEX.md).
 ## Project status
 
 **All five mixins are built and tested.** Weight, carrying, containers, wearable items and wearslots.
-What remains is recovery after an archive, and the commands in `contrib/`. See
+Slot names come from one consumer-declared `Enum`; a subclass per body plan names which of them a
+creature has. What remains is recovery after an archive, and the commands in `contrib/`. See
 [docs/progress.md](docs/progress.md).
 
 ## Where to read first
@@ -64,6 +65,13 @@ Every implementation decision must respect them.
 5. **Game concepts reach the library through the object, never through an import.** The library asks
    an item what it is; it never asks whether a sibling library is installed. A hook earns its place
    only if the library works without it being overridden.
+
+6. **The library resolves no names.** Finding the object a player typed at is the command's job,
+   using Evennia's own search. Doing it here would mean depending on a targeting system.
+
+7. **Identity, never equality.** A consumer's typeclass may define `__eq__` and `__hash__` — by key,
+   by token id — so "is this the object in that slot" is asked with `is`, and sets are keyed on
+   `id()`. See [docs/design.md](docs/design.md) § Identity, never equality.
 
 `[TBD — needs discussion: where exactly the mechanism/content line falls, and therefore which of the
 extracted pieces are library and which stay in FCM. Drawing that line is the first task of the
@@ -147,7 +155,7 @@ evennia-equipment/
 └── tests/                     # standalone test infrastructure
     ├── __init__.py
     ├── game_typeclasses.py    # real typeclasses carrying the mixins
-    ├── wearslot_layouts.py    # slot layouts; imports nothing
+    ├── slot_enums.py          # slot enums; imports nothing but enum
     ├── test_settings.py
     └── urls.py
 ```

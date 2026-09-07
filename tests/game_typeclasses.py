@@ -20,6 +20,7 @@ from evennia_equipment.carrying import EquipmentCarryingMixin
 from evennia_equipment.container import EquipmentContainerMixin
 from evennia_equipment.wearable import EquipmentWearableMixin, WearslotProperty
 from evennia_equipment.wearslots import EquipmentWearslotsMixin
+from tests.slot_enums import WearSlot
 
 
 class CarriableThing(EquipmentCarriableMixin, DefaultObject):
@@ -107,32 +108,27 @@ class Helm(WearableThing):
 
 
 class MistypedHelm(WearableThing):
-    """A class-level default naming a slot no layout declares. WR-09."""
+    """A class-level default naming a slot the enum does not hold. WR-09."""
 
     wearslot = WearslotProperty([["HAED"]])
 
 
 class Humanoid(EquipmentWearslotsMixin, DefaultObject):
-    """A wearer using the humanoid layout. WS cases."""
+    """A wearer with the humanoid body plan. WS cases."""
 
-    wearslot_layout = "humanoid"
+    body_slots = (
+        WearSlot.HEAD,
+        WearSlot.BODY,
+        WearSlot.LEFT_HAND,
+        WearSlot.RIGHT_HAND,
+    )
 
 
 class Dog(EquipmentWearslotsMixin, DefaultObject):
-    """A wearer using a different layout, so the key is proved to be read.
-    WS-04."""
+    """A wearer with a different body plan, so body_slots is proved to be
+    read rather than assumed. WS-04."""
 
-    wearslot_layout = "dog"
-
-
-class Unicorn(EquipmentWearslotsMixin, DefaultObject):
-    """A wearer naming a layout nobody declared. WS-05."""
-
-    wearslot_layout = "unicorn"
-
-
-class Unlayouted(EquipmentWearslotsMixin, DefaultObject):
-    """A wearer that names no layout at all. WS-06."""
+    body_slots = (WearSlot.DOG_NECK, WearSlot.DOG_BODY)
 
 
 class Helmet(WearableThing):
@@ -152,6 +148,19 @@ class Ring(WearableThing):
     WE-04."""
 
     wearslot = WearslotProperty([["LEFT_HAND"], ["RIGHT_HAND"]])
+
+
+class TwinRing(WearableThing):
+    """A ring that compares equal to any other of its kind, as a consumer's
+    typeclass may if it compares by key or by token id. RM-09."""
+
+    wearslot = WearslotProperty([["LEFT_HAND"], ["RIGHT_HAND"]])
+
+    def __eq__(self, other):
+        return isinstance(other, TwinRing)
+
+    def __hash__(self):
+        return hash(TwinRing)
 
 
 class Collar(WearableThing):

@@ -40,11 +40,11 @@ DATABASES = {
     },
 }
 
-# The wearslot layouts, as any configured instance declares them. Required —
-# the library refuses to boot without them. Points at `tests/wearslot_layouts.py`,
-# which imports nothing: `ready()` resolves this during `django.setup()`, while
-# the app registry is still being built.
-EQUIPMENT_WEARSLOTS = "tests.wearslot_layouts.LAYOUTS"
+# Every slot name the suite uses, as any configured instance declares them.
+# Required — the library refuses to boot without it. Points at
+# `tests/slot_enums.py`, which imports nothing but `enum`: `ready()` resolves
+# this during `django.setup()`, while the app registry is still being built.
+EQUIPMENT_WEARSLOTS = "tests.slot_enums.WearSlot"
 
 # Required Django bits
 SECRET_KEY = "test-only-secret"
