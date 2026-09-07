@@ -19,6 +19,9 @@ wants slots does not get to opt out of weight.
 
 from collections.abc import Sequence
 
+# Evennia, because AttributeProperty is Evennia's — a descriptor over its
+# attribute handler, and the mechanism this library validates through. There is
+# no engine-free equivalent to import instead.
 from evennia.typeclasses.attributes import AttributeProperty
 
 from evennia_equipment.carriable import EquipmentCarriableMixin

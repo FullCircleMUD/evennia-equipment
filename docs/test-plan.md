@@ -542,12 +542,32 @@ deep inside the mixin, naming neither the class nor the line that wrote it.
 
 ### WE — wearing
 
-`wear(item)` takes an object already in hand and returns `(bool, message)`. It resolves no names and
-searches for nothing: finding the object a player typed at is the command's job, and doing it here
-would mean the library depending on a targeting system.
+`wear(item)` takes **a string or an object** and returns `(bool, message)`.
 
-Selection walks the item's groups in declaration order and takes the first one where **every** slot
-exists on this wearer and is free. Group order is therefore the item author's preference —
+**Both, because the redundancy is otherwise unavoidable.** A command handed only objects has to filter
+the wearer's contents to find one, and then `wear()` filters again to confirm what the caller just
+established. Resolving inside means the work happens once. An object is still accepted, because
+`restore_worn()` and a consumer equipping something it has just created both hold one already — and two
+identical rings are distinct objects but the same string.
+
+**Resolution is a filter, not a search.** The candidates come from `walk_contents` with
+`f_key_matches`, so the name test lives beside every other filter in the ecosystem rather than inside
+this one function.
+
+The order is what makes the refusals accurate:
+
+1. Match against what is carried and not worn. One or more results, that is the answer.
+2. Otherwise match against what is worn — a hit there means "you are already wearing it", which is a
+   different answer to "you are not carrying it".
+3. Otherwise nothing matched.
+
+**Several matches are two different situations.** Items sharing a key are interchangeable, so the
+first is worn and the player is not asked a question with no useful answer. Items with different keys
+are a genuine question, and the reply echoes what was typed — `Which ring do you mean?` — rather than
+listing the candidates, which could be five.
+
+Selection then walks the item's groups in declaration order and takes the first one where **every**
+slot exists on this wearer and is free. Group order is therefore the item author's preference —
 `[["RIGHT_FINGER"], ["LEFT_FINGER"]]` favours the right hand — and the library holds no opinion about
 it.
 
@@ -566,6 +586,15 @@ it.
 | WE-11 | Wearing does not move the item out of contents | test_we_11_wearing_does_not_move_the_item |
 | WE-12 | Wearing does not change the carried weight | test_we_12_wearing_does_not_change_the_carried_weight |
 | WE-13 | Both outcomes return a message | test_we_13_both_outcomes_return_a_message |
+| WE-14 | A string naming a carried item wears it | test_we_14_a_string_naming_a_carried_item_wears_it |
+| WE-15 | Matching ignores case | test_we_15_matching_ignores_case |
+| WE-16 | A string matching part of a key matches that item | test_we_16_a_substring_of_the_key_matches |
+| WE-17 | A string matching nothing is refused as not carried | test_we_17_a_string_matching_nothing_is_refused_as_not_carried |
+| WE-18 | A string matching only a worn item is refused as already worn | test_we_18_a_string_matching_only_a_worn_item_says_already_worn |
+| WE-19 | Of several matches sharing a key, the first is worn | test_we_19_of_several_matches_sharing_a_key_the_first_is_worn |
+| WE-20 | Matches with differing keys are refused with the word that was typed | test_we_20_matches_with_differing_keys_are_refused_with_the_typed_word |
+| WE-21 | A carried item wins over a worn one matching the same string | test_we_21_a_carried_item_wins_over_a_worn_one |
+| WE-22 | An object is worn without being resolved | test_we_22_an_object_is_worn_without_being_resolved |
 
 `WE-05` is the one that bites if the implementation fills slots as it checks them: a group that turns
 out to be blocked half-way through would leave the wearer holding an item in some of its slots and
@@ -575,6 +604,22 @@ not others. Selection has to complete before anything is written.
 not shift — which is why the two mixins compose without either knowing about the other.
 
 `WE-13` pins the contract the command layer depends on: the mixin answers, the command speaks.
+
+`WE-18` is the case a single-pass implementation gets wrong. Matching only the unworn items and
+stopping there tells a player wearing the helmet that they are not carrying it, which is both false and
+useless. It is the reason resolution is two ordered passes rather than one filter.
+
+`WE-21` is the same ordering seen from the other side, and the reason the passes are ordered rather
+than merged. A player wearing one iron ring and carrying another means `wear ring` while dressed; the
+carried one is the only one that can be worn, and a merged pass could return either.
+
+`WE-19` and `WE-20` are the two halves of "several matched". Interchangeable items are an answer, not a
+question — asking which of two identical rings is wanted has no answer a player can give. Differently
+named ones are a real question, and `WE-20` pins that the reply quotes what was typed rather than
+listing candidates.
+
+`WE-22` keeps the object path intact. `restore_worn()` and a consumer equipping a freshly created item
+both hold the object already, and resolving by key would be ambiguous exactly where objects are not.
 
 ### RM — removing
 

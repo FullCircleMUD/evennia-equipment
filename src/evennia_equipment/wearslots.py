@@ -20,8 +20,11 @@ and a game that wants slots does not get to opt out of weight.
 
 from enum import Enum
 
+# Evennia, because AttributeProperty is Evennia's — a descriptor over its
+# attribute handler, and the mechanism this library validates through. There is
+# no engine-free equivalent to import instead.
 from evennia.typeclasses.attributes import AttributeProperty
-from evennia_targeting import op_not, walk_contents
+from evennia_targeting import f_key_matches, op_not, walk_contents
 
 from evennia_equipment.carrying import EquipmentCarryingMixin
 from evennia_equipment.targeting import f_identity_in, f_worn_by
@@ -187,20 +190,61 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
         """
         return walk_contents(self, self, op_not(f_worn_by(self)))
 
+    def _resolve_wearable(self, text):
+        """Find the item ``text`` names among the things this wearer holds.
+
+        Two ordered passes, because that is what makes the refusals accurate.
+        A single pass over the unworn items tells someone already wearing the
+        helmet that they are not carrying it, which is both false and useless.
+
+        Args:
+            text (str): What the player typed.
+
+        Returns:
+            tuple: ``(item, None)`` when one item is the answer, or
+            ``(None, refusal)`` when none is.
+        """
+        name = f_key_matches(text)
+
+        carried = walk_contents(self, self, op_not(f_worn_by(self)), name)
+        if carried:
+            # Items sharing a key are interchangeable, so the first is the
+            # answer. Differing keys are a real question — and it echoes what
+            # was typed rather than listing candidates, which could be five.
+            if len({obj.key.lower() for obj in carried}) > 1:
+                return (None, f"Which {text} do you mean?")
+            return (carried[0], None)
+
+        worn = walk_contents(self, self, f_worn_by(self), name)
+        if worn:
+            return (None, f"You are already wearing {worn[0]}.")
+
+        return (None, f"You are not carrying {text}.")
+
     def wear(self, item):
         """Put an item into the first group of slots that will take it.
 
-        The item is expected to be in ``contents`` already — finding the object
-        a player named is the command layer's job, and resolving names here
-        would mean depending on a targeting system.
+        Takes a string or an object. A string is resolved against what this
+        wearer holds — otherwise a command has to filter the contents to find
+        an object, only to hand it to a method that filters again to confirm
+        what the caller just established. An object is still accepted, because
+        ``restore_worn()`` and a consumer equipping something it has just made
+        both hold one, and two identical rings are distinct objects but the
+        same string.
 
         Args:
-            item (Object): The object to wear. Already in hand.
+            item (Object or str): The object to wear, or what the player typed.
 
         Returns:
             tuple: ``(bool, str)`` — whether it was worn, and why not if it was
             not. The mixin answers; the command speaks.
         """
+        if isinstance(item, str):
+            resolved, refusal = self._resolve_wearable(item)
+            if resolved is None:
+                return (False, refusal)
+            item = resolved
+
         if item not in self.contents:
             return (False, f"You are not carrying {item}.")
 

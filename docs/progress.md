@@ -2,6 +2,31 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-07 — wear() resolves a name
+
+`wear()` takes a string or an object. 179 tests.
+
+- **The redundancy is what decided it.** A command handed only objects filters the wearer's contents to
+  find one, then `wear()` filters again to confirm what the caller just established. Resolving inside
+  means it happens once, and the command drops to three lines.
+- **An object is still accepted.** `restore_worn()` and a consumer equipping something it has just
+  created both hold one, and two identical rings are distinct objects but the same string. Case
+  `WE-22`.
+- **Two ordered passes**, unworn contents first. A single pass tells someone already wearing the helmet
+  that they are not carrying it, which is false and useless. Cases `WE-18`, `WE-21`.
+- **Matching is `f_key_matches`** from targeting — case-insensitive substring over key and aliases, so
+  `wear doom` reaches a *slaying helm of mega doom*. Cases `WE-14`–`WE-16`.
+- **Several matches are two situations.** One key among them is an answer, so the first is worn.
+  Differing keys are a question, and the reply quotes what was typed — `Which iron do you mean?` — since
+  listing candidates could run to five. Cases `WE-19`, `WE-20`.
+
+`WE-20` passed the moment it was written, which was the tell. `wear("iron")` fell through the existing
+contents check and returned "you are not carrying iron" — false, and containing the word, so both
+assertions held for the wrong reason. Requiring the message to *ask* is what made it discriminate.
+
+Principle 6 changes with it: the library resolves a name against what the wearer holds. Rooms,
+containers and other characters stay the command's problem.
+
 ## 2026-09-07 — filtering moved onto evennia-targeting
 
 Every walk over an object's `contents` now goes through `walk_contents`. The library holds no inline

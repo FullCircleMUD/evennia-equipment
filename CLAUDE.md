@@ -65,8 +65,11 @@ Every implementation decision must respect them.
    an item what it is; it never asks whether a sibling library is installed. A hook earns its place
    only if the library works without it being overridden.
 
-6. **The library resolves no names.** Finding the object a player typed at is the command's job,
-   using Evennia's own search over a candidate list this library's filters build.
+6. **A name is resolved against what the wearer holds, and nothing wider.** `wear()` takes a string
+   or an object, and matches a string with `f_key_matches` over its own contents — otherwise every
+   command filters to find an object and then hands it to a method that filters again. Rooms,
+   containers and other characters stay the command's problem. See [docs/design.md](docs/design.md)
+   § Commands.
 
 7. **Every walk over `contents` goes through `evennia-targeting`.** No inline comprehension over
    `contents` anywhere. The filters this library needs are published in

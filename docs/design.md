@@ -309,9 +309,25 @@ different wording subclasses one rather than reimplementing the mechanism behind
 `obj.move_to(caller)`, so `at_pre_object_receive` already fires and the stock commands respect a
 refusal untouched.
 
-**The library resolves no names.** Finding the object a player typed at is the command's job, using
-Evennia's own `search`. Doing it in the mixin would mean depending on a targeting system — which is
-also why there is no coupling with `evennia-targeting`.
+**The mixin resolves the name, so the command does not.** `wear()` takes a string or an object, and a
+string is matched against what the wearer holds with `f_key_matches` — the same filter path as
+everything else the library walks.
+
+The alternative made every command do the work twice. A command handed only objects has to filter the
+wearer's contents to find one, and then `wear()` filters again to confirm what the caller just
+established. Resolving inside means it happens once, and the command is three lines:
+
+```python
+worn, message = caller.wear(self.args)
+caller.msg(message)
+```
+
+An object is still accepted, because `restore_worn()` and a consumer equipping something it has just
+created both hold one already — and two identical rings are distinct objects but the same string.
+
+**The scope is what the wearer holds, and nothing wider.** Rooms, containers on the floor and other
+characters are the command's problem, and a command wanting one of those resolves it itself and passes
+the object.
 
 ## Not yet decided
 

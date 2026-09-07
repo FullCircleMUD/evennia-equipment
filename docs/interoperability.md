@@ -118,9 +118,10 @@ data each closes over is read once per walk rather than once per object.
 `ValueError`: an empty set matches nothing here, because an empty record is the ordinary state of a
 wearer who had nothing on and `restore_worn()` reaches it on a normal path.
 
-**Searching stays out of this library.** Resolving "wear the boots" against what a character is holding
-is the command's job, using Evennia's own search over a candidate list these filters build. See
-[design.md](design.md) § *Commands*.
+**Name resolution uses targeting too.** `wear()` accepts a string and matches it with `f_key_matches`
+over the wearer's own contents, so the name test is a filter like every other rather than a search of
+its own. The scope stops there — a room, a container on the floor or another character is the
+command's problem, and it passes the object it resolved. See [design.md](design.md) § *Commands*.
 
 ## evennia-world-builder
 

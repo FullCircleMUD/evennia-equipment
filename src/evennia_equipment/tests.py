@@ -505,6 +505,124 @@ class WearTests(DjangoTestCase):
         _, refused = wearer.wear(helmet)
         self.assertTrue(refused)
 
+    # --- resolving a string ------------------------------------------------
+
+    def _named(self, wearer, typeclass, key):
+        """Create a wearable in contents under a key of the test's choosing.
+
+        The `_held` helper keys everything after its typeclass, which is fine
+        while items are told apart by type. These cases tell them apart by
+        name, so the name is the thing under test.
+        """
+        from evennia import create_object
+
+        return create_object(typeclass, key=key, location=wearer, nohome=True)
+
+    def test_we_14_a_string_naming_a_carried_item_wears_it(self):
+        """WE-14"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._named(wearer, Helmet, "iron helmet")
+        worn, _ = wearer.wear("iron helmet")
+        self.assertTrue(worn)
+        self.assertIs(wearer.worn_items["HEAD"], helmet)
+
+    def test_we_15_matching_ignores_case(self):
+        """WE-15"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._named(wearer, Helmet, "iron helmet")
+        worn, _ = wearer.wear("IRON HELMET")
+        self.assertTrue(worn)
+        self.assertIs(wearer.worn_items["HEAD"], helmet)
+
+    def test_we_16_a_substring_of_the_key_matches(self):
+        """WE-16"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._named(wearer, Helmet, "slaying helm of mega doom")
+        worn, _ = wearer.wear("doom")
+        self.assertTrue(worn)
+        self.assertIs(wearer.worn_items["HEAD"], helmet)
+
+    def test_we_17_a_string_matching_nothing_is_refused_as_not_carried(self):
+        """WE-17"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._named(wearer, Helmet, "iron helmet")
+        worn, message = wearer.wear("boots")
+        self.assertFalse(worn)
+        self.assertIn("boots", message)
+
+    def test_we_18_a_string_matching_only_a_worn_item_says_already_worn(self):
+        """WE-18"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._named(wearer, Helmet, "iron helmet")
+        wearer.wear("iron helmet")
+        worn, message = wearer.wear("iron helmet")
+        self.assertFalse(worn)
+        # The refusal has to say which of the two things went wrong. "Not
+        # carrying it" is both false and useless to someone wearing it.
+        self.assertIn("already", message.lower())
+
+    def test_we_19_of_several_matches_sharing_a_key_the_first_is_worn(self):
+        """WE-19"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        first = self._named(wearer, Ring, "iron ring")
+        self._named(wearer, Ring, "iron ring")
+        worn, _ = wearer.wear("ring")
+        self.assertTrue(worn)
+        self.assertIs(wearer.worn_items["LEFT_HAND"], first)
+
+    def test_we_20_matches_with_differing_keys_are_refused_with_the_typed_word(self):
+        """WE-20"""
+        from tests.game_typeclasses import Helmet, Ring
+
+        wearer = self._wearer()
+        self._named(wearer, Helmet, "iron helmet")
+        self._named(wearer, Ring, "iron ring")
+        worn, message = wearer.wear("iron")
+        self.assertFalse(worn)
+        # A question, not a refusal. Asserting only that it failed and named
+        # the word would pass on "you are not carrying iron", which is the
+        # wrong answer arrived at by not looking.
+        self.assertIn("which", message.lower())
+        self.assertIn("iron", message)
+        self.assertEqual(wearer.get_all_worn(), [])
+
+    def test_we_21_a_carried_item_wins_over_a_worn_one(self):
+        """WE-21"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        first = self._named(wearer, Ring, "iron ring")
+        second = self._named(wearer, Ring, "iron ring")
+        wearer.wear(first)
+        worn, _ = wearer.wear("ring")
+        self.assertTrue(worn)
+        self.assertIs(wearer.worn_items["RIGHT_HAND"], second)
+
+    def test_we_22_an_object_is_worn_without_being_resolved(self):
+        """WE-22"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        self._named(wearer, Ring, "iron ring")
+        second = self._named(wearer, Ring, "iron ring")
+        # Two items one string could not tell apart. Resolving would take the
+        # first; an object path takes the one it was handed.
+        worn, _ = wearer.wear(second)
+        self.assertTrue(worn)
+        self.assertIs(wearer.worn_items["LEFT_HAND"], second)
+
 
 class RemoveTests(DjangoTestCase):
     """RM — freeing the slots an item occupies."""

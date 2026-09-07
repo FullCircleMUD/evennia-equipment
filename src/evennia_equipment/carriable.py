@@ -14,6 +14,9 @@ limit: ``at_set()`` fires only on assignment through the descriptor, so
 defended against — it cannot be closed from here.
 """
 
+# Evennia, because AttributeProperty is Evennia's — a descriptor over its
+# attribute handler, and the mechanism this library validates through. There is
+# no engine-free equivalent to import instead.
 from evennia.typeclasses.attributes import AttributeProperty
 
 
