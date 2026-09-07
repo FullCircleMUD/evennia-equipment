@@ -21,9 +21,9 @@ For the design wiki, read [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
 
-**The weight half is built; the wearing half is not.** `EquipmentCarriableMixin`,
-`EquipmentCarryingMixin` and `EquipmentContainerMixin` exist and are tested. Wearslots are still in
-FCM. See [docs/progress.md](docs/progress.md).
+**All five mixins are built and tested.** Weight, carrying, containers, wearable items and wearslots.
+What remains is recovery after an archive, and the commands in `contrib/`. See
+[docs/progress.md](docs/progress.md).
 
 ## Where to read first
 
@@ -135,14 +135,19 @@ evennia-equipment/
 ├── src/
 │   └── evennia_equipment/     # library code (src layout)
 │       ├── __init__.py
+│       ├── apps.py            # AppConfig — ready() runs the boot check
 │       ├── carriable.py       # EquipmentCarriableMixin — an item's weight
 │       ├── carrying.py        # EquipmentCarryingMixin — the total, and capacity
+│       ├── config.py          # the setting, check_settings(), the accessors
 │       ├── container.py       # EquipmentContainerMixin — carried and carrying
+│       ├── wearable.py        # EquipmentWearableMixin — an item's slot groups
+│       ├── wearslots.py       # EquipmentWearslotsMixin — slots, wear, remove
 │       ├── log.py             # shim onto Evennia's logger → equipment.log
 │       └── tests.py           # unit tests, run via runtests.py
 └── tests/                     # standalone test infrastructure
     ├── __init__.py
     ├── game_typeclasses.py    # real typeclasses carrying the mixins
+    ├── wearslot_layouts.py    # slot layouts; imports nothing
     ├── test_settings.py
     └── urls.py
 ```

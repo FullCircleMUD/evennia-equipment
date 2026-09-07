@@ -18,6 +18,8 @@ from evennia_equipment.carriable import (
 )
 from evennia_equipment.carrying import EquipmentCarryingMixin
 from evennia_equipment.container import EquipmentContainerMixin
+from evennia_equipment.wearable import EquipmentWearableMixin, WearslotProperty
+from evennia_equipment.wearslots import EquipmentWearslotsMixin
 
 
 class CarriableThing(EquipmentCarriableMixin, DefaultObject):
@@ -91,6 +93,71 @@ class PurseContainer(Container):
 
     def extra_weight(self):
         return self.ndb.coin_weight or 0.0
+
+
+class WearableThing(EquipmentWearableMixin, DefaultObject):
+    """Anything that can be worn. Declares nothing, so a test sets its slots.
+    WR cases."""
+
+
+class Helm(WearableThing):
+    """Declares its slots on the class, as a consumer's item types do. WR-09."""
+
+    wearslot = WearslotProperty([["HEAD"]])
+
+
+class MistypedHelm(WearableThing):
+    """A class-level default naming a slot no layout declares. WR-09."""
+
+    wearslot = WearslotProperty([["HAED"]])
+
+
+class Humanoid(EquipmentWearslotsMixin, DefaultObject):
+    """A wearer using the humanoid layout. WS cases."""
+
+    wearslot_layout = "humanoid"
+
+
+class Dog(EquipmentWearslotsMixin, DefaultObject):
+    """A wearer using a different layout, so the key is proved to be read.
+    WS-04."""
+
+    wearslot_layout = "dog"
+
+
+class Unicorn(EquipmentWearslotsMixin, DefaultObject):
+    """A wearer naming a layout nobody declared. WS-05."""
+
+    wearslot_layout = "unicorn"
+
+
+class Unlayouted(EquipmentWearslotsMixin, DefaultObject):
+    """A wearer that names no layout at all. WS-06."""
+
+
+class Helmet(WearableThing):
+    """One group, one slot — the ordinary case. WE-01."""
+
+    wearslot = WearslotProperty([["HEAD"]])
+
+
+class Greatsword(WearableThing):
+    """One group taking two slots at once. WE-02, WE-05."""
+
+    wearslot = WearslotProperty([["LEFT_HAND", "RIGHT_HAND"]])
+
+
+class Ring(WearableThing):
+    """Two groups of one, so a second ring lands on the other hand. WE-03,
+    WE-04."""
+
+    wearslot = WearslotProperty([["LEFT_HAND"], ["RIGHT_HAND"]])
+
+
+class Collar(WearableThing):
+    """Declares a slot no humanoid has. WE-06, WE-10."""
+
+    wearslot = WearslotProperty([["DOG_NECK"]])
 
 
 class Nowhere(DefaultObject):

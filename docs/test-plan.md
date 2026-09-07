@@ -27,26 +27,69 @@ Behaviour is agreed here first, before any test or code — see
 | `EW` | `effective_weight` — what an object contributes to whoever holds it |
 | `WC` | `at_weight_changed` — a weight changing while the object is held |
 | `CN` | `EquipmentContainerMixin` — an object that is both carried and carrying |
+| `CF` | The wearslot layouts a consumer declares, and the boot check that refuses a bad one |
+| `WR` | `EquipmentWearableMixin` — an item's slot declaration, and what may be stored in it |
+| `WS` | `EquipmentWearslotsMixin` — a wearer's slots, derived from its declared layout |
+| `WE` | `wear()` — choosing a group of slots and filling it |
+| `RM` | `remove()` — freeing the slots an item occupies |
+| `GW` | `get_all_worn()` — what a wearer has on |
+| `GC` | `get_carried()` — what a wearer holds but is not wearing |
 
 ## Fixtures
 
-The fake objects the suite needs, named and purposed. Typeclasses live in `tests/game_typeclasses.py`,
-which imports nothing but the library.
+The fake objects the suite needs, named and purposed, in two modules.
 
-| Fixture | Purpose |
+**`tests/game_typeclasses.py`** — real Evennia typeclasses carrying the library's mixins.
+`AttributeProperty` needs an object with an attribute handler behind it, so the cases create these
+rather than faking one. It imports Evennia, so tests import it inside a test body.
+
+| Typeclass | Purpose |
 |---|---|
-| `CarriableThing` | A minimal typeclass carrying `EquipmentCarriableMixin` and declaring nothing of its own — the default-weight case |
-| `HeavyThing` | A `CarriableThing` subclass overriding the weight default, mirroring a consumer's per-item defaults |
-| `PaddedThing` | Contributes more than it weighs, standing in for how a container will behave |
+| `CarriableThing` | Carries `EquipmentCarriableMixin` and declares nothing of its own — the default-weight case |
+| `HeavyThing` | A `CarriableThing` overriding the weight default, mirroring a consumer's per-item defaults |
+| `PaddedThing` | Contributes more than it weighs, so the sum is proved to read `effective_weight` rather than `weight` |
 | `NoisyThing` | Overrides `at_weight_changed()` and calls through, so both halves are observable |
-| `Carrier` | A minimal typeclass carrying `EquipmentCarryingMixin` — the thing whose contents are summed |
+| `Carrier` | Carries `EquipmentCarryingMixin` — the thing whose contents are summed |
 | `BulkyCarrier` | A `Carrier` overriding the capacity default |
 | `PurseCarrier` | A `Carrier` with `extra_weight()` and `extra_capacity()` overridden, both read from `ndb` so a test can change them mid-flight |
-| `RecordingCarrier` | A `Carrier` with a witness mixin *below* it in the MRO — only reached if the library calls `super()` |
-| `RefusingCarrier` | A `Carrier` whose chain vetoes every arrival, so the library must not overrule it |
-| `Nowhere` | Carries no mixin: both somewhere to move an object to, and the object a carrier refuses |
-| `Container` | A minimal typeclass carrying `EquipmentContainerMixin` — carried and carrying at once |
+| `RecordingCarrier` | A `Carrier` with `_RecordingHooks` *below* it in the MRO — reached only if the library calls `super()` |
+| `RefusingCarrier` | A `Carrier` with `_RefusingHooks` below it, vetoing every arrival, so the library must not overrule it |
+| `Container` | Carries `EquipmentContainerMixin` — carried and carrying at once |
 | `PanniersContainer` | A `Container` contributing only its own weight, as a mount's panniers would |
+| `PurseContainer` | A `Container` with `extra_weight()` overridden — coin inside a bag |
+| `Nowhere` | Carries no mixin: both somewhere to move an object to, and the object a carrier refuses |
+| `WearableThing` | Carries `EquipmentWearableMixin` and declares no slots — the undeclared case |
+| `Helm` | A class-level slot declaration, so the check is proved to run on a default |
+| `MistypedHelm` | A class-level declaration naming a slot no layout holds |
+| `Helmet` | One group of one slot — the ordinary wearable |
+| `Greatsword` | One group taking two slots at once |
+| `Ring` | Two groups of one, so a second lands on the other hand |
+| `Collar` | Declares a slot no humanoid has |
+| `Humanoid` | A wearer using the humanoid layout |
+| `Dog` | A wearer using a different layout, so the key is proved to be read |
+| `Unicorn` | A wearer naming a layout nobody declared |
+| `Unlayouted` | A wearer naming no layout at all |
+
+**`tests/wearslot_layouts.py`** — the layouts the `CF` cases point `EQUIPMENT_WEARSLOTS` at, standing
+in for a consumer's own module. It **imports nothing at all**: `check_settings()` resolves it during
+`django.setup()`, while the app registry is still being built, so anything it imported would be pulled
+in at the worst possible moment.
+
+| Value | What it is |
+|---|---|
+| `LAYOUTS` | Two well-formed layouts. What the suite boots with |
+| `EMPTY` | A mapping declaring no layouts |
+| `EMPTY_LAYOUT` | A named layout with no slots in it |
+| `NOT_A_MAPPING` | A list where a mapping is required |
+| `BARE_STRING_LAYOUT` | A layout given as a string rather than a list of names |
+| `NON_STRING_ENTRY` | A layout holding something that is not a slot name |
+| `REPEATED_NAME` | A layout naming the same slot twice |
+| `SEVERAL_PROBLEMS` | Two layouts wrong in two different ways, for the one-refusal case |
+| `LAYOUT_WITH_A_NEW_SLOT` | The humanoid layout with a slot added, for the restart case |
+
+The `_layouts()` helper in the suite swaps the setting and clears the resolved cache on the way in and
+out. That simulates a restart with a different layout, which is the only way a layout ever changes —
+`get_wearslot_layouts()` holds its answer for the life of the process.
 
 ## Cases
 
@@ -310,6 +353,235 @@ guard for that, and propagation reaches the rebuild by a route that does not pas
 `CN-11` was retired before it was written — a container's own capacity is inherited behaviour already
 covered by `CN-10`.
 
+### CF — the declared layouts
+
+A slot layout is content the library cannot invent, so it comes from the consumer as a setting naming
+a module path — see [library-standards.md](../../../design/library-standards.md) §
+*Consumer-authored config*.
+
+```python
+EQUIPMENT_WEARSLOTS = "world.wearslots.LAYOUTS"       # settings.py
+
+LAYOUTS = {                                            # world/wearslots.py
+    "humanoid": ["HEAD", "FACE", "NECK", ...],
+    "dog": ["DOG_NECK", "DOG_BODY"],
+}
+```
+
+One setting rather than one per creature type: a game has as many layouts as it has body plans, and
+they resolve inside the consumer's own module rather than in `settings.py`.
+
+**The bar is that nothing downstream crashes**, plus two checks that go past it deliberately — a bare
+string and a repeated name both produce a silently wrong layout rather than an error, which is worse
+to find.
+
+| ID | Case | Test function |
+|---|---|---|
+| CF-01 | A missing `EQUIPMENT_WEARSLOTS` is refused at boot | test_cf_01_a_missing_setting_is_refused |
+| CF-02 | A path that does not resolve is refused, with the original error chained | test_cf_02_an_unresolvable_path_is_refused_with_the_cause |
+| CF-03 | A layouts object that is not a mapping is refused | test_cf_03_a_layouts_object_that_is_not_a_mapping_is_refused |
+| CF-04 | An empty mapping is accepted — a game may declare no layouts yet | test_cf_04_an_empty_mapping_is_accepted |
+| CF-05 | A layout given as a bare string is refused | test_cf_05_a_layout_given_as_a_bare_string_is_refused |
+| CF-06 | A layout containing a non-string entry is refused | test_cf_06_a_layout_with_a_non_string_entry_is_refused |
+| CF-07 | A layout with a repeated slot name is refused | test_cf_07_a_layout_with_a_repeated_name_is_refused |
+| CF-08 | Every problem is reported in one refusal, not the first only | test_cf_08_every_problem_is_reported_at_once |
+| CF-09 | A valid configuration boots | test_cf_09_a_valid_configuration_boots |
+| CF-10 | The accessor returns the resolved layouts | test_cf_10_the_accessor_returns_the_resolved_layouts |
+| CF-11 | A layout declaring no slots is refused | test_cf_11_a_layout_with_no_slots_is_refused |
+| CF-12 | The known slot names are every slot across every layout | test_cf_12_the_known_slot_names_span_every_layout |
+| CF-13 | The known slot names are empty when no layouts are declared | test_cf_13_the_known_slot_names_are_empty_without_layouts |
+
+`CF-05` is the trap the standards name: a bare string is iterable, has a length, and membership against
+it succeeds one letter at a time, so `{"humanoid": "HEAD"}` yields four slots called `H`, `E`, `A` and
+`D` and nothing complains.
+
+`CF-07` is the same class of failure. A repeated name is folded by the dict, leaving a creature with
+fewer slots than its layout appears to declare.
+
+`CF-11` refuses a named layout with no slots in it, which is a typo rather than a decision — a
+creature that wears nothing does not carry the mixin. `CF-04` still accepts an empty *mapping*: a game
+that has declared no body plans yet is mid-setup, not mistaken.
+
+
+### WR — the item's slot declaration
+
+An item declares which slots it occupies as a **list of groups**. Each group is one option, and every
+slot inside a group is taken together:
+
+```python
+wearslot = [["HEAD"]]                            # a helm
+wearslot = [["LEFT_FINGER"], ["RIGHT_FINGER"]]   # a ring — either finger
+wearslot = [["WIELD", "HOLD"]]                   # a greatsword — both hands
+wearslot = [["HEAD", "BODY", "LEGS"]]            # a suit of plate
+```
+
+**The canonical form is required, not normalised.** A flat list is genuinely ambiguous —
+`["WIELD", "HOLD"]` could mean either hand or both — so converting one would be inventing a meaning
+rather than tidying a shape. Refusing it says so at the point the mistake is made, and matches `CF-05`
+refusing a bare-string layout rather than reading it letter by letter.
+
+Two checks, both in `at_set()`. The format, and whether the names exist in *any* declared layout — an
+item does not know which creature will wear it, so the union is as far as it can go. Whether *this*
+creature has the slots is `wear()`'s job.
+
+| ID | Case | Test function |
+|---|---|---|
+| WR-01 | A canonical declaration is accepted | test_wr_01_a_canonical_declaration_is_accepted |
+| WR-02 | A bare string is refused | test_wr_02_a_bare_string_is_refused |
+| WR-03 | A flat list of names is refused | test_wr_03_a_flat_list_is_refused |
+| WR-04 | A group holding a non-string is refused | test_wr_04_a_group_holding_a_non_string_is_refused |
+| WR-05 | A declaration with no groups is refused | test_wr_05_a_declaration_with_no_groups_is_refused |
+| WR-06 | A group with no slots is refused | test_wr_06_a_group_with_no_slots_is_refused |
+| WR-07 | A slot name no declared layout holds is refused | test_wr_07_a_slot_no_layout_holds_is_refused |
+| WR-08 | A slot name from any layout is accepted, whichever creature it belongs to | test_wr_08_a_slot_from_any_layout_is_accepted |
+| WR-09 | A class-level default is validated the first time it is read | test_wr_09_a_class_default_is_validated_on_first_read |
+| WR-10 | A slot repeated inside one group is refused | test_wr_10_a_slot_repeated_in_one_group_is_refused |
+| WR-11 | A declaration set through `.db` bypasses validation | test_wr_11_a_declaration_set_through_db_bypasses_validation |
+
+`WR-08` is the scope of the name check: an item declaring `DOG_NECK` is valid even in a game whose
+players are humanoid, because the item genuinely does not know its wearer.
+
+`WR-09` matters because a typo in a typeclass would otherwise wait for someone to assign to it.
+`AttributeProperty.__get__` autocreates by calling `__set__`, so the first read of any instance runs
+the check.
+
+`WR-10` refuses `[["HEAD", "HEAD"]]` — a group cannot take the same slot twice, and the repetition
+would otherwise be folded silently, leaving a group that occupies less than it reads.
+
+`WR-11` is the same documented limit as `CR-11`.
+
+### WS — a wearer's slots
+
+A typeclass names which layout it uses; the mixin derives its slots from it.
+
+```python
+class Character(EquipmentWearslotsMixin, DefaultCharacter):
+    wearslot_layout = "humanoid"
+```
+
+**The slot names are not persisted.** Only what is occupied is stored, and the full set of slots is
+read from the layout each time. So a slot added to a layout appears on characters that already exist,
+rather than being silently unusable because their dictionary was built before it was declared.
+
+| ID | Case | Test function |
+|---|---|---|
+| WS-01 | A wearer's slots come from its declared layout | test_ws_01_slots_come_from_the_declared_layout |
+| WS-02 | Every slot starts empty | test_ws_02_every_slot_starts_empty |
+| WS-03 | Slots keep the order the layout declares them in | test_ws_03_slots_keep_the_layouts_order |
+| WS-04 | Two wearers with different layouts have different slots | test_ws_04_different_layouts_give_different_slots |
+| WS-05 | A layout name no declared layout holds is refused | test_ws_05_an_undeclared_layout_name_is_refused |
+| WS-06 | A wearer declaring no layout at all is refused | test_ws_06_a_wearer_with_no_layout_is_refused |
+| WS-07 | A slot added to a layout appears on a wearer that already exists | test_ws_07_a_slot_added_to_a_layout_appears_on_existing_wearers |
+
+`WS-03` matters because the display reads in declaration order — head to toe rather than alphabetical
+— and because a later change to a set or a comprehension would lose it silently.
+
+`WS-07` is what the derived-not-persisted choice buys, and the case exists so it is not later
+"optimised" into a stored dictionary.
+
+`WS-06` fires on first read rather than at boot. Nothing at boot can enumerate a consumer's
+typeclasses, so this is the earliest the library can see one.
+
+### WE — wearing
+
+`wear(item)` takes an object already in hand and returns `(bool, message)`. It resolves no names and
+searches for nothing: finding the object a player typed at is the command's job, and doing it here
+would mean the library depending on a targeting system.
+
+Selection walks the item's groups in declaration order and takes the first one where **every** slot
+exists on this wearer and is free. Group order is therefore the item author's preference —
+`[["RIGHT_FINGER"], ["LEFT_FINGER"]]` favours the right hand — and the library holds no opinion about
+it.
+
+| ID | Case | Test function |
+|---|---|---|
+| WE-01 | A single-slot item fills that slot | test_we_01_a_single_slot_item_fills_that_slot |
+| WE-02 | A multi-slot item fills every slot in its group | test_we_02_a_multi_slot_item_fills_every_slot_in_its_group |
+| WE-03 | The first group with all its slots free is chosen | test_we_03_the_first_free_group_is_chosen |
+| WE-04 | A later group is chosen when an earlier one is occupied | test_we_04_a_later_group_is_chosen_when_the_first_is_taken |
+| WE-05 | A partly-blocked group is skipped rather than partly filled | test_we_05_a_partly_blocked_group_is_not_partly_filled |
+| WE-06 | A group naming a slot this wearer does not have is skipped | test_we_06_a_group_naming_a_missing_slot_is_skipped |
+| WE-07 | An item not in contents is refused | test_we_07_an_item_not_in_contents_is_refused |
+| WE-08 | An item already worn is refused | test_we_08_an_item_already_worn_is_refused |
+| WE-09 | An item declaring no slots is refused | test_we_09_an_item_declaring_no_slots_is_refused |
+| WE-10 | Wearing is refused when no group is usable | test_we_10_wearing_is_refused_when_no_group_is_usable |
+| WE-11 | Wearing does not move the item out of contents | test_we_11_wearing_does_not_move_the_item |
+| WE-12 | Wearing does not change the carried weight | test_we_12_wearing_does_not_change_the_carried_weight |
+| WE-13 | Both outcomes return a message | test_we_13_both_outcomes_return_a_message |
+
+`WE-05` is the one that bites if the implementation fills slots as it checks them: a group that turns
+out to be blocked half-way through would leave the wearer holding an item in some of its slots and
+not others. Selection has to complete before anything is written.
+
+`WE-12` ties back to the carrying half. Wearing moves a reference, not an object, so the total must
+not shift — which is why the two mixins compose without either knowing about the other.
+
+`WE-13` pins the contract the command layer depends on: the mixin answers, the command speaks.
+
+### RM — removing
+
+`remove(item)` frees every slot the item occupies and leaves it in `contents`. Taking something off
+does not put it down.
+
+Nothing gates it. An item can always come off — see *Open decisions* for the cursed-item question,
+which is deliberately unanswered rather than answered with a hook nobody calls.
+
+| ID | Case | Test function |
+|---|---|---|
+| RM-01 | Removing frees the slot | test_rm_01_removing_frees_the_slot |
+| RM-02 | Removing a multi-slot item frees every slot it occupied | test_rm_02_removing_frees_every_slot_it_occupied |
+| RM-03 | Removing an item that is not worn is refused | test_rm_03_removing_something_not_worn_is_refused |
+| RM-04 | Removing leaves the item in contents | test_rm_04_removing_leaves_the_item_in_contents |
+| RM-05 | Removing does not change the carried weight | test_rm_05_removing_does_not_change_the_carried_weight |
+| RM-06 | Other worn items are unaffected | test_rm_06_other_worn_items_are_unaffected |
+| RM-07 | A removed item can be worn again | test_rm_07_a_removed_item_can_be_worn_again |
+| RM-08 | Both outcomes return a message | test_rm_08_both_outcomes_return_a_message |
+
+`RM-02` is the counterpart to `WE-02`: a two-handed item sits under two keys, and freeing only the
+first leaves a phantom holding the other hand for good.
+
+`RM-06` catches the lazy implementation — clearing the whole stored dict passes `RM-01` and `RM-02`
+while quietly stripping everything else the wearer had on.
+
+`RM-07` is the round trip. An item whose slots are freed but which is still referenced somewhere else
+reads as worn, so `wear()` refuses it — a failure neither `RM-01` nor `WE-08` sees on its own.
+
+### GW — what is worn
+
+`get_all_worn()` returns the items a wearer has on, each once however many slots it fills.
+
+**Built from `contents`, not from the slot map.** The slot map can hold an object that no longer
+exists — `delete()` fires no hook, so nothing clears it — and an answer assembled from `contents`
+cannot return a ghost. The same reasoning that made the weight total a rebuild rather than a running
+figure.
+
+| ID | Case | Test function |
+|---|---|---|
+| GW-01 | Nothing worn gives an empty result | test_gw_01_nothing_worn_gives_an_empty_result |
+| GW-02 | A worn item is listed | test_gw_02_a_worn_item_is_listed |
+| GW-03 | A multi-slot item is listed once, not once per slot | test_gw_03_a_multi_slot_item_is_listed_once |
+| GW-04 | A carried but unworn item is not listed | test_gw_04_a_carried_item_is_not_listed |
+| GW-05 | A deleted item drops out | test_gw_05_a_deleted_item_drops_out |
+
+### GC — what is carried
+
+`get_carried()` returns what is in `contents` and not worn — what a player means by "my inventory",
+as against everything the object holds.
+
+| ID | Case | Test function |
+|---|---|---|
+| GC-01 | Empty contents gives an empty result | test_gc_01_empty_contents_gives_an_empty_result |
+| GC-02 | A carried item is listed | test_gc_02_a_carried_item_is_listed |
+| GC-03 | A worn item is not listed | test_gc_03_a_worn_item_is_not_listed |
+| GC-04 | A multi-slot worn item is not listed | test_gc_04_a_multi_slot_worn_item_is_not_listed |
+| GC-05 | Worn and carried together account for everything in contents | test_gc_05_worn_and_carried_account_for_all_contents |
+
+`GC-05` is the invariant that matters: the two are a partition, so nothing in `contents` can fall
+through both and become invisible to a player.
+
+`GC-04` guards the implementation that asks "is this in the first slot it declared" rather than "is
+this worn at all" — a greatsword would then show up in the inventory listing as well as both hands.
+
 ## Open decisions
 
 Surfaces this library is expected to grow, listed so they are not forgotten, and deliberately without
@@ -329,5 +601,9 @@ cases. A case here is a commitment, and nothing below has been designed yet.
 - **[TBD — needs discussion: what stays out.** Durability, fungible balances and item ownership are
   all adjacent to equipment in FCM and are not obviously this library's. Each needs a ruling before
   any of it is lifted.]
+- **[TBD — needs discussion: whether anything may refuse to come off.** `wear()` has gates and
+  `remove()` has none, so a cursed item or a strapped-on shield cannot be modelled. FCM has no gate
+  either, so it may simply not be wanted — but adding a refusal later changes the return contract for
+  anyone already calling `remove()`.]
 - **[TBD — needs discussion: settings and their defaults**, and which of them have no safe default and
   so are refused at boot.]

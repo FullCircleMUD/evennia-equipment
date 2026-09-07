@@ -2,6 +2,36 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-06 — slots, wearing and removing
+
+`EquipmentWearableMixin` and `EquipmentWearslotsMixin` are built and tested. 129 tests.
+
+- **Layouts come from one setting naming one module**, per the standards' consumer-authored config
+  rule, and are refused at boot when unusable — missing, unresolvable, not a mapping, a layout given
+  as a bare string, holding a non-string, repeating a name, or declaring no slots at all. Cases `CF`.
+- **Slots are derived, not stored.** Only occupied slots are persisted; the slot list is read from the
+  layout every time, so a slot added to a layout is usable by characters that already exist. Cases
+  `WS`.
+- **The layouts resolve once per process.** Nothing can change a setting while the server is up, so
+  there is nothing to invalidate.
+- **An item declares a list of groups** — each group one option, every slot in a group taken together.
+  Validated in `at_set()` for shape and for names that appear in some layout. Cases `WR`.
+- **`two_handed` and creature-type checks both disappear.** A greatsword declares
+  `[["LEFT_HAND", "RIGHT_HAND"]]` and a collar declares `DOG_NECK`; the same "does this wearer have
+  the slot, and is it free" test handles both. Cases `WE-02`, `WE-06`.
+- **Selection completes before anything is written**, so a blocked group cannot leave an item half
+  equipped. `WE-05`.
+- **`get_all_worn()` and `get_carried()` walk `contents`, not the slot map** — which deduplicates a
+  multi-slot item, keeps a deleted one from reappearing, and makes the two a partition. Cases `GW`,
+  `GC`.
+
+`isinstance(value, list)` is unsafe for an `AttributeProperty` holding a mutable: Evennia runs a
+class-level default through `from_pickle`, which returns a `_SaverList`, and that is not a `list`
+subclass. `WR-09` caught it — the check refused a correct declaration made the way every consumer
+will make one. `Sequence` is the right test.
+
+Not built: recovery after an archive, and the commands.
+
 ## 2026-09-06 — the container
 
 `EquipmentContainerMixin` is built and tested. 67 tests. Twelve lines of code, because the seam was

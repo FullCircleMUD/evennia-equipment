@@ -40,6 +40,12 @@ DATABASES = {
     },
 }
 
+# The wearslot layouts, as any configured instance declares them. Required —
+# the library refuses to boot without them. Points at `tests/wearslot_layouts.py`,
+# which imports nothing: `ready()` resolves this during `django.setup()`, while
+# the app registry is still being built.
+EQUIPMENT_WEARSLOTS = "tests.wearslot_layouts.LAYOUTS"
+
 # Required Django bits
 SECRET_KEY = "test-only-secret"
 TEST_ENVIRONMENT = True

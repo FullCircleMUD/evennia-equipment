@@ -14,8 +14,8 @@ side.
 | `EquipmentCarryingMixin` | `EquipmentCarriableMixin` | `weight` |
 | `EquipmentWearslotsMixin(EquipmentCarryingMixin)` | `EquipmentWearableMixin(EquipmentCarriableMixin)` | `wearslot` |
 
-**Built:** `EquipmentCarriableMixin`, `EquipmentCarryingMixin`, and `EquipmentContainerMixin`, which
-takes both. The wearing pair is agreed and unwritten.
+**Built:** all five. `EquipmentContainerMixin` takes both sides of the first pair. What remains is
+recovery after an archive, and the commands.
 
 The specialisation inherits rather than composes, so a consumer makes one decision per class — *worn,
 or only carried* — and a wearable cannot be declared without the weight contract it depends on.
@@ -127,19 +127,68 @@ The panniers case — contents that do not count against whoever carries the con
 overriding `effective_weight` to return `self.weight` alone. Not a flag: a boolean says there are
 exactly two modes, and an override also serves "half the weight".
 
+## Slots and wearing
+
+A consumer declares their body plans in one module, named by one setting:
+
+```python
+EQUIPMENT_WEARSLOTS = "world.wearslots.LAYOUTS"       # settings.py
+
+LAYOUTS = {                                            # world/wearslots.py
+    "humanoid": ["HEAD", "BODY", "LEFT_HAND", "RIGHT_HAND"],
+    "dog": ["DOG_NECK", "DOG_BODY"],
+}
+```
+
+A typeclass names which one it uses — `wearslot_layout = "humanoid"` — and the mixin derives its slots
+from it on every read. **Only what is occupied is stored.** A slot added to a layout is therefore
+usable by characters that already exist, once the server restarts; a stored slot dictionary would
+leave them without it for good.
+
+The layouts resolve once per process. Nothing can change a setting while the server is up, so there is
+nothing to invalidate.
+
+An item declares its slots as a **list of groups** — each group one option, every slot in a group
+taken together. `wear()` walks the groups in order and takes the first where every slot both exists on
+this wearer and is free.
+
+That one test does two jobs. A collar declaring `DOG_NECK` fails it on a humanoid for the same reason
+a helmet fails it when the head is taken, so creature-type restriction needs no code of its own — and
+a two-handed weapon declaring `[["WIELD", "HOLD"]]` cannot be equipped alongside anything in either
+hand, so `two_handed` needs no flag, no command checks and no display note.
+
+**Selection completes before anything is written.** Filling slots while checking them would leave a
+two-handed item in one hand when the other turned out to be occupied.
+
+`get_all_worn()` and `get_carried()` are both built by walking `contents`, not the slot map. That
+deduplicates a multi-slot item, keeps a deleted object from reappearing, and makes the two a partition
+— they differ by one `not`, so nothing a wearer holds can fall through both.
+
 ## Commands
 
-**Core ships none, and `get` / `drop` / `give` need none.** Evennia's `CmdGet` calls
-`obj.move_to(caller)`, so `at_pre_object_receive` already fires and the stock commands respect a
-refusal without being touched.
+**All six live in `contrib/`** — `wear`, `remove`, `wield`, `hold`, `equipment`, `inventory`. The test
+in the standards is whether core is fully functional without the folder, and it is: the mixins are
+complete, and a consumer driving `wear()` from their own code loses nothing.
 
-`wear`, `remove` and `wield` have no Evennia equivalent, so a consumer with the wearslots mixin would
-have a mechanism no player can reach. That is the `contrib/` case: core ships the primitive, contrib
-ships one working answer, opt-in.
+They ship because Evennia has no vocabulary for slots, so a consumer would otherwise have a mechanism
+no player can reach. They render plainly and are meant to be read and replaced — a consumer wanting
+different wording subclasses one rather than reimplementing the mechanism behind it.
+
+`get`, `drop` and `give` are not among them and need not be. Evennia's `CmdGet` calls
+`obj.move_to(caller)`, so `at_pre_object_receive` already fires and the stock commands respect a
+refusal untouched.
+
+**The library resolves no names.** Finding the object a player typed at is the command's job, using
+Evennia's own `search`. Doing it in the mixin would mean depending on a targeting system — which is
+also why there is no coupling with `evennia-targeting`.
 
 ## Not yet decided
 
-- Where the mechanism/content line falls for the wearing pair. See the `[TBD]` in [../CLAUDE.md](../CLAUDE.md).
+- Recovery after an archive. A restored character has an empty slot map and items with new primary
+  keys, so what was worn has to be recorded against a durable identity the consumer supplies. Agreed
+  in shape — a set of identities, rebuilt from what is worn, and a `restore_worn()` that walks
+  `contents` — and unwritten.
+- Whether anything may refuse to come off. `wear()` has gates; `remove()` has none.
 - Whether the library renders equipment displays or returns data for the consumer to format. Both of
   FCM's hard imports live in its render methods.
 - The item-side gate a consumer overrides to refuse an item, and its default.

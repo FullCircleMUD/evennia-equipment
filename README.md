@@ -5,10 +5,11 @@ underneath: what a character holds, what it weighs, and how much it can take.
 
 ## Status
 
-**Early — the weight half works, the wearing half is not written.** An object declares a weight, a
-carrier totals what it holds and answers what more it can take, and the total keeps itself current
-through arrivals, departures, reloads and weight changes in place. Containers nest and their contents
-count through them. Equipment slots are still to come. Nothing is published. See
+**Early — the mechanism works, the commands are not written.** An object declares a weight and which
+slots it occupies; a wearer declares a body plan and can wear, remove and list. The carried total
+keeps itself current through arrivals, departures, reloads and weight changes in place, and containers
+nest. Still to come: recovering what was worn after a world rebuild, and the commands a player types.
+Nothing is published. See
 [docs/progress.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/progress.md).
 
 ## The problem it solves
@@ -28,8 +29,10 @@ The library supplies the mechanism: the slots, the carried set and the distincti
 the weight and capacity arithmetic over them. The game supplies the content — what an item is, what
 it is made of, what wearing it does, and what happens to a character who is carrying too much.
 
-`[TBD — needs discussion: exactly where that line falls. Drawing it is the first task of the
-extraction, not something settled here.]`
+Slots are declared as a list of groups. Each group is one way of wearing the thing, and every slot in
+a group is taken together — so a ring declares `[["LEFT_FINGER"], ["RIGHT_FINGER"]]` and fits either
+hand, while a greatsword declares `[["WIELD", "HOLD"]]` and takes both. Two-handed weapons and
+"a dog cannot wear a helmet" both fall out of that, with no rule of their own.
 
 ## Is this for you?
 
