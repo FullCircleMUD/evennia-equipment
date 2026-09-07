@@ -21,8 +21,10 @@ and a game that wants slots does not get to opt out of weight.
 from enum import Enum
 
 from evennia.typeclasses.attributes import AttributeProperty
+from evennia_targeting import op_not, walk_contents
 
 from evennia_equipment.carrying import EquipmentCarryingMixin
+from evennia_equipment.targeting import f_identity_in, f_worn_by
 
 
 class EquipmentWearslotsMixin(EquipmentCarryingMixin):
@@ -175,8 +177,7 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
         Returns:
             list: The worn items, in the order ``contents`` gives them.
         """
-        occupied = self._occupied_ids()
-        return [obj for obj in self.contents if id(obj) in occupied]
+        return walk_contents(self, self, f_worn_by(self))
 
     def get_carried(self):
         """Return what is held but not worn — what a player calls inventory.
@@ -184,8 +185,7 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
         Returns:
             list: Everything in ``contents`` that is not in a slot.
         """
-        occupied = self._occupied_ids()
-        return [obj for obj in self.contents if id(obj) not in occupied]
+        return walk_contents(self, self, op_not(f_worn_by(self)))
 
     def wear(self, item):
         """Put an item into the first group of slots that will take it.
@@ -267,11 +267,7 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
         record = self.worn_equipment_record or set()
         return [
             self.wear(item)
-            for item in self.contents
-            # getattr, not a plain read: a character carries rocks and bread as
-            # well as armour, and a plain carriable item has no identity to ask
-            # about — reading one raises rather than returning None.
-            if getattr(item, "wearslot_identity", None) in record
+            for item in walk_contents(self, self, f_identity_in(record))
         ]
 
     def at_pre_remove(self, item):

@@ -66,9 +66,15 @@ Every implementation decision must respect them.
    only if the library works without it being overridden.
 
 6. **The library resolves no names.** Finding the object a player typed at is the command's job,
-   using Evennia's own search. Doing it here would mean depending on a targeting system.
+   using Evennia's own search over a candidate list this library's filters build.
 
-7. **Identity, never equality.** A consumer's typeclass may define `__eq__` and `__hash__` — by key,
+7. **Every walk over `contents` goes through `evennia-targeting`.** No inline comprehension over
+   `contents` anywhere. The filters this library needs are published in
+   [targeting.py](src/evennia_equipment/targeting.py), so a filter is defined once and fixed once
+   rather than hand-rolled again in the next repo that needs it. See
+   [docs/design.md](docs/design.md) § Filtering goes through evennia-targeting.
+
+8. **Identity, never equality.** A consumer's typeclass may define `__eq__` and `__hash__` — by key,
    by token id — so "is this the object in that slot" is asked with `is`, and sets are keyed on
    `id()`. See [docs/design.md](docs/design.md) § Identity, never equality.
 
@@ -146,6 +152,7 @@ evennia-equipment/
 │       ├── container.py       # EquipmentContainerMixin — carried and carrying
 │       ├── wearable.py        # EquipmentWearableMixin — an item's slot groups
 │       ├── wearslots.py       # EquipmentWearslotsMixin — slots, wear, remove
+│       ├── targeting.py       # the filters this library publishes for evennia-targeting
 │       ├── log.py             # shim onto Evennia's logger → equipment.log
 │       └── tests.py           # unit tests, run via runtests.py
 └── tests/                     # standalone test infrastructure
@@ -162,7 +169,8 @@ either; a demo gamedir is only meaningful once there is a library surface to exe
 ## Tools and environment
 
 - Python 3.10+ (pinned via `pyproject.toml`).
-- Evennia is the only runtime dependency.
+- Runtime dependencies: Evennia and `evennia-targeting`. Neither is published, so a dev venv installs
+  the sibling from its checkout: `pip install -e ../evennia-targeting`.
 - **Tests use Django's test runner** via `python runtests.py`, which bootstraps Django then calls
   `evennia._init()`, as the siblings do. Not pytest, and no gamedir required.
 - Development uses a dedicated venv at `venv/` (gitignored), independent of any consumer game.
@@ -173,5 +181,9 @@ either; a demo gamedir is only meaningful once there is a library surface to exe
   FCM, and the one that has already drawn its mechanism/content line. Its
   [docs/design.md](../evennia-survival/docs/design.md) § *Out of scope* is worth reading for how that
   line was argued, not for what it decided.
+- **[../evennia-targeting/](../evennia-targeting/)** — a hard dependency, not just a reference. Read
+  its [docs/architecture.md](../evennia-targeting/docs/architecture.md) § *Where an extension goes*
+  before adding a filter here, and its [docs/testing.md](../evennia-targeting/docs/testing.md) for the
+  validators every published filter is tested against.
 - **[../evennia-scaling/](../evennia-scaling/)** and **[../evennia-archive/](../evennia-archive/)** —
   the reference shape for repo structure, the test runner and the docs surfaces.

@@ -22,6 +22,8 @@ from evennia_equipment.config import (
     valid_slot_names,
 )
 from evennia_equipment.log import equipment_log
+from evennia_equipment.targeting import f_identity_in, f_worn_by
+from evennia_targeting.testing import validate_factory
 
 _ENUMS = "tests.slot_enums"
 
@@ -992,6 +994,142 @@ class WornAndCarriedTests(DjangoTestCase):
             set(wearer.get_all_worn()) | set(wearer.get_carried()),
             set(wearer.contents),
         )
+
+
+class TargetingFilterTests(DjangoTestCase):
+    """TG — the filters this library publishes for evennia-targeting."""
+
+    def _wearer(self):
+        """Create one wearer. Not a test."""
+        from evennia import create_object
+        from tests.game_typeclasses import Humanoid
+
+        return create_object(Humanoid, key="wearer", nohome=True)
+
+    def _held(self, wearer, typeclass):
+        """Create an item in the wearer's contents, unworn."""
+        from evennia import create_object
+
+        return create_object(
+            typeclass, key=typeclass.__name__, location=wearer, nohome=True
+        )
+
+    def _worn(self, wearer, typeclass):
+        """Create an item in the wearer's contents and put it on."""
+        item = self._held(wearer, typeclass)
+        wearer.wear(item)
+        return item
+
+    # --- f_worn_by --------------------------------------------------------
+
+    def test_tg_01_f_worn_by_passes_the_factory_validator(self):
+        """TG-01"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._worn(wearer, Helmet)
+        self.assertEqual(
+            validate_factory(f_worn_by, (wearer,), fixtures=(helmet, wearer)), []
+        )
+
+    def test_tg_02_a_worn_item_passes(self):
+        """TG-02"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._worn(wearer, Helmet)
+        self.assertTrue(f_worn_by(wearer)(helmet, wearer))
+
+    def test_tg_03_a_carried_item_does_not(self):
+        """TG-03"""
+        from tests.game_typeclasses import Helmet, Ring
+
+        wearer = self._wearer()
+        self._worn(wearer, Helmet)
+        ring = self._held(wearer, Ring)
+        self.assertFalse(f_worn_by(wearer)(ring, wearer))
+
+    def test_tg_04_a_multi_slot_item_passes(self):
+        """TG-04"""
+        from tests.game_typeclasses import Greatsword
+
+        wearer = self._wearer()
+        sword = self._worn(wearer, Greatsword)
+        self.assertTrue(f_worn_by(wearer)(sword, wearer))
+
+    def test_tg_05_of_two_equal_items_only_the_worn_one_passes(self):
+        """TG-05"""
+        from tests.game_typeclasses import TwinRing
+
+        wearer = self._wearer()
+        worn = self._worn(wearer, TwinRing)
+        carried = self._held(wearer, TwinRing)
+        is_worn = f_worn_by(wearer)
+        self.assertTrue(is_worn(worn, wearer))
+        self.assertFalse(is_worn(carried, wearer))
+
+    def test_tg_06_a_wearer_with_nothing_on_matches_nothing(self):
+        """TG-06"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, Helmet)
+        self.assertFalse(f_worn_by(wearer)(helmet, wearer))
+
+    def test_tg_07_the_occupied_slots_are_read_once_at_build_time(self):
+        """TG-07"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._worn(wearer, Helmet)
+        is_worn = f_worn_by(wearer)
+        wearer.remove(helmet)
+        self.assertTrue(is_worn(helmet, wearer))
+
+    # --- f_identity_in ----------------------------------------------------
+
+    def test_tg_08_f_identity_in_passes_the_factory_validator(self):
+        """TG-08"""
+        from tests.game_typeclasses import IdentifiedHelmet
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, IdentifiedHelmet)
+        self.assertEqual(
+            validate_factory(f_identity_in, ({"nft:1"},), fixtures=(helmet, wearer)),
+            [],
+        )
+
+    def test_tg_09_an_item_whose_identity_is_in_the_set_passes(self):
+        """TG-09"""
+        from tests.game_typeclasses import IdentifiedHelmet
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, IdentifiedHelmet)
+        self.assertTrue(f_identity_in({"nft:1"})(helmet, wearer))
+
+    def test_tg_10_an_item_whose_identity_is_not_in_the_set_does_not(self):
+        """TG-10"""
+        from tests.game_typeclasses import IdentifiedHelmet
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, IdentifiedHelmet)
+        self.assertFalse(f_identity_in({"nft:2"})(helmet, wearer))
+
+    def test_tg_11_an_item_with_no_identity_attribute_is_passed_over(self):
+        """TG-11"""
+        from tests.game_typeclasses import CarriableThing
+
+        wearer = self._wearer()
+        rock = self._held(wearer, CarriableThing)
+        self.assertFalse(f_identity_in({"nft:1"})(rock, wearer))
+
+    def test_tg_12_an_empty_set_matches_nothing_rather_than_raising(self):
+        """TG-12"""
+        from tests.game_typeclasses import IdentifiedHelmet
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, IdentifiedHelmet)
+        self.assertFalse(f_identity_in(set())(helmet, wearer))
 
 
 class CarriableTests(DjangoTestCase):

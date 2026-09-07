@@ -5,9 +5,11 @@ list; the reasoning for each step is below it or in [design.md](design.md).
 
 ## 1. Install the package
 
-Nothing is published yet, so install from a checkout:
+Nothing is published yet, so install from a checkout — and `evennia-targeting` is a dependency that is
+not published either, so it comes from a checkout too:
 
 ```
+pip install -e /path/to/evennia-targeting
 pip install -e /path/to/evennia-equipment
 ```
 

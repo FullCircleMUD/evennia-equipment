@@ -55,6 +55,7 @@ cd evennia-equipment
 python -m venv venv
 # Activate the venv (platform-specific)
 pip install evennia
+pip install -e ../evennia-targeting   # a dependency, and not published either
 pip install -e .
 python runtests.py
 ```

@@ -9,6 +9,8 @@ permanently. Rebuilding means a missed event costs one stale reading, corrected
 by the next rebuild.
 """
 
+from evennia_targeting import f_excluding, walk_contents
+
 from evennia_equipment.carriable import (
     EquipmentCarriableMixin,
     NonNegativeNumberProperty,
@@ -92,10 +94,14 @@ class EquipmentCarryingMixin:
         Returns:
             None: The result is stored in ``items_weight``.
         """
+        # f_excluding refuses empty arguments, so a rebuild with nothing to
+        # leave out passes no filter at all rather than an inert one.
+        filters = (f_excluding(exclude),) if exclude is not None else ()
+
         # effective_weight, not weight: a container answers for itself, so
         # there is no container branch here and never needs to be one.
         self.items_weight = sum(
-            obj.effective_weight for obj in self.contents if obj is not exclude
+            obj.effective_weight for obj in walk_contents(self, self, *filters)
         )
 
     def at_pre_object_receive(self, arriving_object, source_location, **kwargs):

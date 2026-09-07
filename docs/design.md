@@ -33,6 +33,32 @@ object, never the library*.
 **A hook earns its place only if the library works without it being overridden.** Otherwise it is an
 abstract method, and the seam is in the wrong place.
 
+## Filtering goes through evennia-targeting
+
+Every walk over an object's `contents` is a `walk_contents` call with named filters. The library holds
+no inline comprehension over `contents` anywhere.
+
+The reason is that a filter written inline is a filter nobody else can find. "Is this item worn" is
+needed by this library, by any command that lists an inventory, and by any game rule that cares — and
+three copies of it are three places to fix when it is wrong. One definition, in the library that owns
+the concept, is fixed once.
+
+So the two filters this library needs are published rather than kept private, in
+`src/evennia_equipment/targeting.py` — the module name every library extending `evennia-targeting`
+uses, so `find . -name targeting.py` shows a reader what already exists before they write a second one.
+
+| Filter | Matches | Used by |
+|---|---|---|
+| `f_worn_by(wearer)` | What that wearer has on | `get_all_worn()`, and inverted by `op_not` for `get_carried()` |
+| `f_identity_in(identities)` | Items whose `wearslot_identity` is in a set | `restore_worn()` |
+
+Both are factories, not predicates. Each closes over data assembled once — the occupied slots, the
+record — instead of recomputing it for every object the walk visits, and the snapshot that produces is
+the right semantics for a single pass.
+
+The weight rebuild needs nothing of its own: targeting's `f_excluding` already expresses "everything
+but this one", which is all `at_object_leave` wanted.
+
 ## Weight is rebuilt, not adjusted
 
 `_recalculate_item_weight()` sums `contents` from scratch on every weight-changing event rather than

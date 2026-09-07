@@ -37,6 +37,7 @@ Behaviour is agreed here first, before any test or code — see
 | `ID` | `wearslot_identity` — what an item is known by across a world rebuild |
 | `ER` | `update_worn_equipment_record()` — writing down what is worn, to restore it later |
 | `RW` | `restore_worn()` — putting the recorded equipment back on after a rebuild |
+| `TG` | The filters this library publishes for `evennia-targeting` |
 
 ## Fixtures
 
@@ -749,6 +750,51 @@ raises rather than returning `None`.
 A returned list of refusals is also the only signal that `EQUIPMENT_IDENTITY_ATTRIBUTE` names
 something the game's items do not carry — every identity is then `None`, the record is empty, and
 nothing is restored.
+
+### TG — the filters this library publishes
+
+Two factories in `src/evennia_equipment/targeting.py`, the module every library extending
+`evennia-targeting` puts its own filters in. They are what the library's own walks over `contents` are
+built from, and they are published so a consumer filtering by the same thing uses this definition
+rather than writing a second one.
+
+**Factories, not predicates.** Both close over data assembled once — the occupied slots, the record —
+rather than recomputing it for every object the walk visits.
+
+| ID | Case | Test function |
+|---|---|---|
+| TG-01 | `f_worn_by` passes the library's own factory validator | test_tg_01_f_worn_by_passes_the_factory_validator |
+| TG-02 | A worn item passes the filter | test_tg_02_a_worn_item_passes |
+| TG-03 | A carried but unworn item does not | test_tg_03_a_carried_item_does_not |
+| TG-04 | An item filling several slots passes | test_tg_04_a_multi_slot_item_passes |
+| TG-05 | Of two items that compare equal, only the worn one passes | test_tg_05_of_two_equal_items_only_the_worn_one_passes |
+| TG-06 | A wearer with nothing on matches nothing | test_tg_06_a_wearer_with_nothing_on_matches_nothing |
+| TG-07 | The occupied slots are read once, when the filter is built | test_tg_07_the_occupied_slots_are_read_once_at_build_time |
+| TG-08 | `f_identity_in` passes the library's own factory validator | test_tg_08_f_identity_in_passes_the_factory_validator |
+| TG-09 | An item whose identity is in the set passes | test_tg_09_an_item_whose_identity_is_in_the_set_passes |
+| TG-10 | An item whose identity is not in the set does not | test_tg_10_an_item_whose_identity_is_not_in_the_set_does_not |
+| TG-11 | An item carrying no identity attribute is passed over rather than raising | test_tg_11_an_item_with_no_identity_attribute_is_passed_over |
+| TG-12 | An empty set matches nothing rather than raising | test_tg_12_an_empty_set_matches_nothing_rather_than_raising |
+
+`TG-01` and `TG-08` call `validate_factory` from `evennia_targeting.testing`, which checks the call
+shape, the prefix, a real `bool` return and determinism. It is the sibling's own contract, applied to
+our filters by the sibling's own code — a hand-written equivalent would drift from it.
+
+`TG-05` is the identity guarantee that `GW-06` and `GC-06` pin at the surface, pinned here at the
+filter. A set membership test uses `__hash__` and `__eq__`, either of which a consumer's typeclass may
+define, so the filter compares by `id()`.
+
+`TG-07` fixes the semantics the factory form implies: the filter is a snapshot of the moment it was
+built, not a live view. Correct for a single walk, which is all either is used for, and worth stating
+because the alternative reading is just as plausible.
+
+`TG-12` diverges from the sibling's convention that a factory built with nothing raises `ValueError`.
+There, empty arguments can only be a caller bug. Here an empty record is the ordinary state of a wearer
+who had nothing on, and `restore_worn()` reaches it on a normal path.
+
+The end-to-end proof stays where it is — `GW`, `GC`, `RW` and the weight cases exercise these filters
+through the methods that use them. The cases above cover them as published units a consumer can pick up
+on their own.
 
 ## Open decisions
 

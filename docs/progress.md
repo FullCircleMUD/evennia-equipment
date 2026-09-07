@@ -2,6 +2,34 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-07 — filtering moved onto evennia-targeting
+
+Every walk over an object's `contents` now goes through `walk_contents`. The library holds no inline
+comprehension over `contents`. 170 tests.
+
+- **`evennia-targeting` is a hard dependency**, declared in `pyproject.toml` and imported
+  unconditionally by `carrying.py` and `wearslots.py`.
+- **Two filters published** in `src/evennia_equipment/targeting.py` — `f_worn_by(wearer)` and
+  `f_identity_in(identities)`. The module name is the convention every library extending targeting
+  follows, so `find . -name targeting.py` shows what already exists. Cases `TG`.
+- **Factories, not predicates.** Each closes over data read once — the occupied slots, the record —
+  rather than recomputing it per object in the walk. `TG-07` fixes the snapshot semantics that implies,
+  since the live-view reading is just as plausible.
+- **`get_carried()` needs no filter of its own** — `op_not(f_worn_by(wearer))` is the exact complement,
+  so one definition covers both halves.
+- **The weight rebuild needed nothing new.** `f_excluding` already means "everything but this one". It
+  refuses empty arguments, so a rebuild with nothing to exclude passes no filter rather than an inert
+  one.
+- **`TG-01` and `TG-08` run targeting's own `validate_factory`** over our filters, so the sibling's
+  contract is checked by the sibling's code rather than by a copy of it that can drift.
+
+`TG-12` is a deliberate divergence from targeting's convention that a factory built with nothing raises
+`ValueError`. There, empty arguments can only be a caller bug; here an empty record is the ordinary
+state of a wearer who had nothing on, and `restore_worn()` reaches it on a normal path.
+
+The refactor changed no case. `GW`, `GC`, `RW` and the weight cases assert on results rather than on
+how the walk is done, so they were the proof that the wiring swap was behaviour-preserving.
+
 ## 2026-09-07 — equipment survives a world rebuild
 
 The mechanism is complete. 158 tests.

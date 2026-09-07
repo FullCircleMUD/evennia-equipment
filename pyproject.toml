@@ -26,6 +26,9 @@ classifiers = [
 ]
 dependencies = [
     "evennia",
+    # Every walk over an object's contents goes through walk_contents, so one
+    # definition of a filter serves every call site that needs it.
+    "evennia-targeting",
 ]
 
 [project.urls]
