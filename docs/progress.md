@@ -2,6 +2,26 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-08 — the command set, and contrib is complete
+
+`EquipmentCmdSet` bundles the four, and `docs/contrib.md` documents them. 275 tests.
+
+- **Merging is by key**, and the set is added after Evennia's defaults, so `inventory` replaces its own
+  rather than competing with it. Case `CS-02` — the one that fails invisibly, since a player types
+  `inventory`, gets a listing, and it is the wrong one.
+- **`CS-01` guards the gap nothing else would**: a fifth command written and not added to the set works
+  perfectly, passes its own cases, and no player can reach it.
+- **`docs/contrib.md`** covers installing the cmdset, each command, naming a slot, `extra_lines()`, and
+  what is deliberately absent — `get`/`drop`/`give`, `wield`/`hold`, and anything reading a game's own
+  concepts.
+
+`CS-03` was vacuous as written: it handed `self.call()` a `CmdWear()` instance, so dropping the command
+from the set left it green. It now takes the command from the character's merged cmdset, which is the
+only path that proves the wiring. Second messaging-or-wiring case this session to need a mutation check
+before it discriminated — `CW-07` was the first.
+
+That completes contrib. What remains is adoption, which is a game repo's decision.
+
 ## 2026-09-08 — the inventory command, and stackable
 
 `CmdInventory`, the last of contrib's four, and the core property it needed. 272 tests.

@@ -24,6 +24,7 @@ from evennia_equipment.config import (
 from evennia_equipment.log import equipment_log
 from evennia.utils.test_resources import EvenniaCommandTest
 
+from evennia_equipment.contrib.cmdset import EquipmentCmdSet
 from evennia_equipment.contrib.commands import (
     CmdEquipment,
     CmdInventory,
@@ -2973,3 +2974,44 @@ class InventoryCommandTests(EvenniaCommandTest):
         self.assertEqual(out.count("a healing potion"), 1)
         self.assertIn("(2)", out)
         self.assertEqual(out.count("a longsword"), 2)
+
+
+class CmdSetTests(EvenniaCommandTest):
+    """CS — the four commands as one thing to merge."""
+
+    def test_cs_01_the_set_carries_all_four_commands(self):
+        """CS-01"""
+        keys = {cmd.key for cmd in EquipmentCmdSet()}
+        # Fails when a fifth command is written and nobody adds it here: the
+        # command works, its own cases pass, and no player can reach it.
+        self.assertEqual(keys, {"wear", "remove", "equipment", "inventory"})
+
+    def test_cs_02_our_inventory_wins_over_evennias(self):
+        """CS-02"""
+        from evennia.commands.default.cmdset_character import CharacterCmdSet
+
+        merged = CharacterCmdSet()
+        merged.at_cmdset_creation()
+        merged.add(EquipmentCmdSet)
+
+        answering = [cmd for cmd in merged if cmd.key == "inventory"]
+        self.assertEqual(len(answering), 1)
+        # Fails in the way that looks like nothing being wrong: a player types
+        # inventory, gets a listing, and it is the wrong one.
+        self.assertIsInstance(answering[0], CmdInventory)
+
+    def test_cs_03_a_character_carrying_the_set_can_run_a_command(self):
+        """CS-03"""
+        from evennia import create_object
+        from tests.game_typeclasses import Helmet, Humanoid
+
+        wearer = create_object(Humanoid, key="wearer", location=self.room1)
+        create_object(Helmet, key="an iron helmet", location=wearer)
+        wearer.cmdset.add(EquipmentCmdSet)
+        # Taken from the character's merged cmdset rather than instantiated
+        # here — handing self.call() its own instance would pass even with an
+        # empty set, which is what this case exists to catch.
+        merged = wearer.cmdset.current
+        cmd = next(c for c in merged if c.key == "wear")
+        self.call(cmd, "an iron helmet", caller=wearer)
+        self.assertIsNotNone(wearer.worn_items["HEAD"])

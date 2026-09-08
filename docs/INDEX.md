@@ -21,6 +21,7 @@ index new ones as they are written.
 | Document | What it covers |
 |---|---|
 | [installing.md](installing.md) | Everything a game does to get the library running, in order — the settings, the mixins, and what is not checked for you |
+| [contrib.md](contrib.md) | The four optional commands: installing the cmdset, what each does, and what is deliberately absent |
 | [interoperability.md](interoperability.md) | This library against every sibling library in `libraries/` |
 
 ## Archive

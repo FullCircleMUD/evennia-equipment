@@ -38,6 +38,16 @@ learning that archiving exists. See [design.md](design.md) § *Recovering equipm
 `EQUIPMENT_IDENTITY_ATTRIBUTE` is the join. A world rebuild reissues every primary key, so the record
 is keyed on whatever the game already uses to identify an item permanently.
 
+## evennia-database-cascade
+
+**No coupling.** Neither library imports the other. Cascade routes a library's own tables to a database
+of its own; this library owns no tables, declares no `AliasSpec`, and stores everything as Evennia
+attributes on objects the consumer already has — so there is nothing here for it to route.
+
+See the ruling in [../CLAUDE.md](../CLAUDE.md) § *Out of scope*. It would only be revisited if this
+library gained data that had to outlive a world rebuild or be read from more than one instance, and the
+worn-equipment record deliberately does neither: it lives on the character and travels with it.
+
 ## evennia-equipment
 
 This library.

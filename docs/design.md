@@ -560,6 +560,29 @@ is what earns the seam under the rule the rest of contrib is held to.
 **The summary names a limit only when there is one.** Capacity defaults to `float("inf")`, so a game
 that never sets one would otherwise read `Carrying 9.5 of inf.`
 
+### One thing to merge
+
+`EquipmentCmdSet` holds the four, so installing them is a line rather than four imports:
+
+```python
+class CharacterCmdSet(default_cmds.CharacterCmdSet):
+    def at_cmdset_creation(self):
+        super().at_cmdset_creation()
+        self.add(EquipmentCmdSet)
+```
+
+**Added after the defaults, and that ordering is the point.** Evennia merges cmdsets by key, and the
+later set wins — so `inventory` replaces its own rather than competing with it, and a consumer removes
+nothing. Get that backwards and nothing looks broken: a player types `inventory`, gets a listing, and
+it is Evennia's, offering them the armour they are wearing.
+
+It is a convenience rather than a requirement. A game wanting three of the four adds those
+individually, and one replacing `inventory` adds its own after ours — both ordinary Evennia, needing
+nothing from here.
+
+Consumer-facing detail is in **[contrib.md](contrib.md)** rather than this document, which is about
+why the library is shaped the way it is.
+
 **The mixin resolves the name, so the command does not.** `wear()` and `remove()` each take a string
 or an object, and a string is matched against what the wearer holds with `f_key_matches` — the same
 filter path as everything else the library walks.

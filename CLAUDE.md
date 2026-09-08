@@ -21,13 +21,11 @@ For the design wiki, read [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
 
-**Core is complete.** Five mixins, wearing and removing by name or by slot, four hooks around them,
-equipment recovery across a world rebuild, and two required settings. A consumer driving it from their
-own code needs nothing further.
+**Core and contrib are both complete.** Five mixins, wearing and removing by name or by slot, four
+hooks around them, equipment recovery across a world rebuild, and two required settings — plus four
+optional commands in `contrib/`, merged as one cmdset and meant to be read and replaced.
 
-What is unwritten is `contrib/` — four optional commands, `wear`, `remove`, `equipment` and
-`inventory`. Opt-in, and a consumer that writes its own never installs them. See
-[docs/progress.md](docs/progress.md).
+Not adopted by any game yet. See [docs/progress.md](docs/progress.md).
 
 ## Where to read first
 
@@ -35,8 +33,9 @@ What is unwritten is `contrib/` — four optional commands, `wear`, `remove`, `e
    starts here**, not in the code. **Start here.**
 2. [docs/design.md](docs/design.md) — the mixin family and the reasoning behind it.
 3. [README.md](README.md) — what the library is and its status.
-4. [docs/INDEX.md](docs/INDEX.md) — map of all design docs.
-5. [docs/interoperability.md](docs/interoperability.md) — this library against its siblings.
+4. [docs/contrib.md](docs/contrib.md) — the optional commands, what each does, and what is not there.
+5. [docs/INDEX.md](docs/INDEX.md) — map of all design docs.
+6. [docs/interoperability.md](docs/interoperability.md) — this library against its siblings.
 
 **FCM's `design/inventory-equipment.md` describes the system being extracted, not this library.** It
 is the source to read for how the mechanism behaves today. It is not a specification for what belongs
@@ -144,6 +143,7 @@ evennia-equipment/
 │   ├── INDEX.md
 │   ├── design.md              # the mixin family, and why
 │   ├── installing.md          # what a consumer does, in order
+│   ├── contrib.md             # the optional commands, and installing them
 │   ├── progress.md
 │   ├── test-plan.md
 │   ├── interoperability.md
@@ -160,7 +160,12 @@ evennia-equipment/
 │       ├── wearslots.py       # EquipmentWearslotsMixin — slots, wear, remove
 │       ├── targeting.py       # the filters this library publishes for evennia-targeting
 │       ├── log.py             # shim onto Evennia's logger → equipment.log
-│       └── tests.py           # unit tests, run via runtests.py
+│       ├── tests.py           # unit tests, run via runtests.py
+│       └── contrib/           # optional; core is complete without it
+│           ├── __init__.py    # the surface — the four commands and the cmdset
+│           ├── commands.py    # wear, remove, equipment, inventory
+│           ├── cmdset.py      # EquipmentCmdSet
+│           └── utils.py       # normalising and matching a typed slot name
 └── tests/                     # standalone test infrastructure
     ├── __init__.py
     ├── game_typeclasses.py    # real typeclasses carrying the mixins
@@ -169,8 +174,8 @@ evennia-equipment/
     └── urls.py
 ```
 
-No `contrib/` — nothing opt-in exists, and the standards forbid scaffolding one empty. No `examples/`
-either; a demo gamedir is only meaningful once there is a library surface to exercise.
+No `examples/` — a demo gamedir would only repeat what `contrib/` already shows, and the `CW`–`CS`
+cases exercise the commands against real Evennia objects.
 
 ## Tools and environment
 

@@ -45,6 +45,7 @@ Behaviour is agreed here first, before any test or code — see
 | `CM` | `contrib.commands.CmdRemove` — the command a player types to take something off |
 | `CE` | `contrib.commands.CmdEquipment` — the slot sheet a player reads |
 | `CI` | `contrib.commands.CmdInventory` — what a player is carrying but not wearing |
+| `CS` | `contrib.cmdset.EquipmentCmdSet` — the four commands, merged in one line |
 
 ## Fixtures
 
@@ -1333,6 +1334,40 @@ wrong: a balance is a thing you are carrying, and belongs above the line that to
 
 `CI-11` is what stops the default configuration looking broken. A game with no capacity limit is the
 ordinary case, not an edge one.
+
+### CS — the command set
+
+`EquipmentCmdSet` holds the four commands, so a consumer merges one thing:
+
+```python
+class CharacterCmdSet(default_cmds.CharacterCmdSet):
+    def at_cmdset_creation(self):
+        super().at_cmdset_creation()
+        self.add(EquipmentCmdSet)
+```
+
+**It is a convenience, not a requirement.** A game wanting three of the four adds those individually,
+and one replacing `inventory` adds its own after ours. Both are ordinary Evennia and need nothing here.
+
+**Merging is by key**, which is what makes `inventory` a replacement rather than a rival. Evennia's own
+`CmdInventory` shares the key, and the set added later wins — so a consumer following the snippet above
+gets ours without removing anything.
+
+| ID | Case | Test function |
+|---|---|---|
+| CS-01 | The set carries all four commands | test_cs_01_the_set_carries_all_four_commands |
+| CS-02 | Merged over Evennia's defaults, our `inventory` is the one that answers | test_cs_02_our_inventory_wins_over_evennias |
+| CS-03 | A character carrying the set can run a command from it | test_cs_03_a_character_carrying_the_set_can_run_a_command |
+
+`CS-01` is the case that fails when a fifth command is written and nobody adds it to the set — the
+command works, its own cases pass, and no player can reach it.
+
+`CS-02` is the whole reason the set exists rather than four imports. It fails if the merge leaves
+Evennia's `CmdInventory` answering, which looks like nothing being wrong: a player types `inventory`,
+gets a listing, and it is the wrong one — their worn armour shown as though it were in a sack.
+
+`CS-03` proves the wiring end to end. Every command has its own cases, but those call the command
+object directly; this is the only one that goes through a cmdset.
 
 ## Open decisions
 

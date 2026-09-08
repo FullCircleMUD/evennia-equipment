@@ -136,6 +136,28 @@ archive path and calling it there gives you one call site rather than scattered 
 The library cannot do this for you: it has no way to know when you archive, and nothing it could hook
 without learning that archiving exists.
 
+## 9. (Optional) Add the commands
+
+The library gives your game the mechanism, not the vocabulary — nothing above lets a player type
+anything. `contrib/` ships four commands, merged in one line:
+
+```python
+# commands/default_cmdsets.py
+from evennia_equipment.contrib import EquipmentCmdSet
+
+
+class CharacterCmdSet(default_cmds.CharacterCmdSet):
+    def at_cmdset_creation(self):
+        super().at_cmdset_creation()
+        self.add(EquipmentCmdSet)
+```
+
+`wear`, `remove`, `equipment` and `inventory`. Added after the defaults, so `inventory` replaces
+Evennia's rather than competing with it.
+
+Skip this step if you are writing your own — the mixins are complete without it. Full details, and
+what is deliberately absent, in **[contrib.md](contrib.md)**.
+
 ## Required settings
 
 | Setting | What it does | Without it |

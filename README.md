@@ -10,7 +10,8 @@ and can wear, remove and list — by name or by slot, with hooks either side of 
 whatever a worn item does. The carried total keeps itself current through arrivals, departures, reloads
 and weight changes in place, containers nest, and a character's equipment survives a world rebuild.
 
-Still to come: `contrib/`, four optional commands a player types. Nothing is published. See
+**`contrib/` ships four optional commands** — `wear`, `remove`, `equipment` and `inventory` — merged in
+one line and meant to be read and replaced. Nothing is published. See
 [docs/progress.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/progress.md).
 
 ## The problem it solves
@@ -64,6 +65,7 @@ python runtests.py
 ## Learn more
 
 - [docs/installing.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/installing.md) — everything a game does to get it running
+- [docs/contrib.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/contrib.md) — the four optional commands, and how to install them
 - [docs/INDEX.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/INDEX.md) — the design wiki
 - [docs/design.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/design.md) — the mixin family and the reasoning behind it
 - [docs/test-plan.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/test-plan.md) — every case the library commits to covering
