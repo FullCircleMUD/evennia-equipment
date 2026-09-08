@@ -2,6 +2,32 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-08 — contrib begins, with the slot helpers
+
+`contrib/` exists, holding the two helpers the commands need before any command is written. 230 tests.
+
+- **`normalise_slot(text)`** — upper case, separators removed. Both sides go through it, so how a
+  consumer spelled the enum stops mattering: `RIGHT_FINGER` and `RIGHTFINGER` both answer to `right
+  finger`, `right_finger`, `Right-Finger` and `rightfinger`. Cases `NS`.
+- **`match_slot(wearer, text)`** — exact hit wins, then substring, returning `(slot_name, None)` or
+  `(None, refusal)`. Cases `SM`.
+- **Exact wins** because a game with both `HAND` and `LEFT_HAND` would otherwise never be able to name
+  `HAND`. The `Chimera` fixture pins it with `BODY` and `DOG_BODY`. Case `SM-04`.
+- **It matches the wearer's slots, not the whole enum**, so a humanoid asking for a dog neck is told it
+  has none, and a one-fingered creature is never asked which finger. Case `SM-07`.
+- **Ambiguous slots are listed** where ambiguous items are not — a name match could run to five, a slot
+  match rarely exceeds two, so naming them tells the player which words work.
+
+Both live in contrib because **core never sees typed text**. The normaliser started in core on the
+argument that a consumer writing their own commands would want it, which is the speculative-function
+trap: no caller today. A boot check refusing separator-colliding enum names went the same way — a check
+in core guarding a contrib-only matcher protects nothing when contrib is not installed.
+
+The first cut declared the separator set as a module constant and tripped `constant_outside_config`.
+Following that rule would have put a contrib-only constant in core, which is the same mistake in
+smaller form; the replaces are inline instead. The rule as written has no answer for a contrib-only
+constant.
+
 ## 2026-09-08 — four hooks around wearing
 
 `at_pre_wear`, `at_post_wear`, `at_pre_remove` and `at_post_remove`. 214 tests.

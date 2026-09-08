@@ -404,6 +404,46 @@ Equipped Items
 What contrib cannot do is anything reading a game's own attributes — condition labels, visibility,
 balances. Those are why a consumer replaces the command rather than configures it.
 
+### Naming a slot from typed text
+
+`wear ring on right finger` needs the player's words turned into a slot name. Two helpers in
+`contrib/utils.py` do it, and both are contrib's because **core never sees typed text** — its methods
+take a slot name or an enum member.
+
+`normalise_slot(text)` reduces a string to one comparable form: upper case, with spaces, underscores
+and hyphens removed. **Both sides go through it**, which is the point — it stops mattering how a
+consumer spelled the enum, so `RIGHT_FINGER` and `RIGHTFINGER` both answer to every spelling a player
+might type. The result is for comparison only; what reaches `wear()` is the real value.
+
+Normalising cannot insert a separator — nothing in `backpack` says where the word breaks — so stripping
+them is what makes all four spellings work. The cost is that a game naming both `BACK_PACK` and
+`BACKPACK` makes them permanently ambiguous. That is a naming mistake rather than something to design
+around: two slots differing only by a separator are two a player could never reliably name.
+
+`match_slot(wearer, text)` returns `(slot_name, None)` or `(None, refusal)` — the shape
+`_resolve_wearable()` uses, so a command reads the same for items and slots. An exact match wins
+outright, which a game with both `HAND` and `LEFT_HAND` needs; failing that, a substring, which is one
+answer or a question.
+
+It matches **this wearer's slots, not the whole enum**, so a humanoid asking for a dog neck is told it
+has none rather than told it is ambiguous, and a one-fingered creature is never asked which finger.
+
+Three refusals, and the difference between them is what a player has left to go on:
+
+```
+Which slot? Type 'equipment' to see your wear slots.
+You have no foot. Type 'equipment' to see your wear slots.
+Which do you mean — left hand or right hand?
+```
+
+The first two leave a player with nothing, so both name the command that answers it. The third does
+not, because the options are already in the message. All three are verb-agnostic — `remove from right
+finger` uses the same matcher, so nothing here may assume wearing.
+
+Ambiguous slots are listed where ambiguous **items** are not. A name match could run to five and the
+list would be noise; a wearer has ten slots in total and a substring rarely hits more than two, so
+naming them tells the player exactly which words work.
+
 **The mixin resolves the name, so the command does not.** `wear()` and `remove()` each take a string
 or an object, and a string is matched against what the wearer holds with `f_key_matches` — the same
 filter path as everything else the library walks.

@@ -178,6 +178,17 @@ class StuckWatcher(WatchfulHumanoid):
         return (False, f"{item} will not come off.")
 
 
+class Chimera(EquipmentWearslotsMixin, DefaultObject):
+    """A wearer with two slots where one name contains the other. SM-04.
+
+    `BODY` and `DOG_BODY` normalise to `BODY` and `DOGBODY`, so typing "body"
+    both matches one exactly and is a substring of the other. Without exact
+    match winning, `BODY` could never be named on a creature that has both.
+    """
+
+    body_slots = (WearSlot.BODY, WearSlot.DOG_BODY)
+
+
 class Dog(EquipmentWearslotsMixin, DefaultObject):
     """A wearer with a different body plan, so body_slots is proved to be
     read rather than assumed. WS-04."""

@@ -38,6 +38,8 @@ Behaviour is agreed here first, before any test or code — see
 | `ER` | `update_worn_equipment_record()` — writing down what is worn, to restore it later |
 | `RW` | `restore_worn()` — putting the recorded equipment back on after a rebuild |
 | `TG` | The filters this library publishes for `evennia-targeting` |
+| `NS` | `contrib.utils.normalise_slot()` — one form to compare typed text and slot names in |
+| `SM` | `contrib.utils.match_slot()` — turning what a player typed into a slot name |
 
 ## Fixtures
 
@@ -72,6 +74,7 @@ rather than faking one. It imports Evennia, so tests import it inside a test bod
 | `TwinRing` | A ring comparing equal to any other of its kind, as a consumer's typeclass may |
 | `Humanoid` | A wearer with the humanoid body plan |
 | `Dog` | A wearer with a different body plan, so `body_slots` is proved to be read |
+| `Chimera` | Two slots where one name contains the other, so exact-match-wins is provable |
 | `UnwearableHumanoid` | Refuses everything at `at_pre_wear()`, as a class or alignment rule would |
 | `WatchfulHumanoid` | Records every post hook with its slots and what was worn at that moment |
 | `UnwearableWatcher` | A `WatchfulHumanoid` refusing at `at_pre_wear()`, so a silent refusal is provable |
@@ -999,6 +1002,93 @@ who had nothing on, and `restore_worn()` reaches it on a normal path.
 The end-to-end proof stays where it is — `GW`, `GC`, `RW` and the weight cases exercise these filters
 through the methods that use them. The cases above cover them as published units a consumer can pick up
 on their own.
+
+### NS — normalising a slot name
+
+`contrib.utils.normalise_slot(text)` reduces a string to the one form typed text and slot names are
+compared in: **upper case, with spaces, underscores and hyphens removed.**
+
+Both sides go through it, which is the point. It stops mattering how a consumer spelled the enum — a
+game with `RIGHT_FINGER` and a game with `RIGHTFINGER` both answer to `right finger`, `right_finger`,
+`Right-Finger` and `rightfinger`, with nothing declared either side.
+
+**The result is for comparison only.** What reaches `wear()` is the real slot value, looked up after
+the match; the normalised form is thrown away.
+
+**It lives in contrib because only contrib has typed text.** Core takes a slot name or an enum member
+and never sees what a player wrote.
+
+| ID | Case | Test function |
+|---|---|---|
+| NS-01 | A name already in canonical form is unchanged | test_ns_01_a_canonical_name_is_unchanged |
+| NS-02 | Case is folded up | test_ns_02_case_is_folded_up |
+| NS-03 | Spaces are removed | test_ns_03_spaces_are_removed |
+| NS-04 | Underscores are removed | test_ns_04_underscores_are_removed |
+| NS-05 | Hyphens are removed | test_ns_05_hyphens_are_removed |
+| NS-06 | Surrounding whitespace is ignored | test_ns_06_surrounding_whitespace_is_ignored |
+| NS-07 | Mixed and repeated separators all go | test_ns_07_mixed_and_repeated_separators_all_go |
+| NS-08 | An empty string normalises to an empty string | test_ns_08_an_empty_string_normalises_to_empty |
+
+`NS-03` to `NS-05` are one rule and three decisions. An implementation handling only spaces passes the
+first and fails the others, which is exactly the partial job worth catching.
+
+`NS-08` is not a curiosity. `wear ring on ` reaches this function with an empty string, and a raise
+there is a traceback where a refusal belongs. The command rejects the empty case; this pins that the
+normaliser is not where it blows up.
+
+**A consumer naming two slots that normalise the same** — `BACK_PACK` and `BACKPACK` — makes them
+permanently ambiguous, and no case here prevents it. Two slots differing only by a separator are a
+naming mistake rather than something the library can resolve, and the matcher's own "which do you
+mean?" is what a player would get.
+
+### SM — matching a typed slot name
+
+`contrib.utils.match_slot(wearer, text)` turns what a player typed into a slot name this wearer
+actually has, or says why it cannot.
+
+Returns `(slot_name, None)` or `(None, refusal)` — the same shape `_resolve_wearable()` uses, so a
+command reads the same whether it is resolving an item or a slot. The refusal is a finished message.
+
+**Both sides go through `normalise_slot()`**, so how the consumer spelled the enum stops mattering.
+
+The order:
+
+1. An exact match on the normalised form wins outright. A game with both `HAND` and `LEFT_HAND` needs
+   this, or `hand` can never mean `HAND`.
+2. Otherwise substring. One hit is the answer.
+3. Several hits are a question, and the refusal **names them** — `Which do you mean — left hand or
+   right hand?` — in display form, lowercased with underscores as spaces.
+4. No hits is a refusal naming what was typed.
+
+**It matches this wearer's slots, not the whole enum.** A humanoid asking for a dog neck is told it has
+none rather than told it is ambiguous, and a one-fingered creature is never asked which finger.
+
+| ID | Case | Test function |
+|---|---|---|
+| SM-01 | An exact slot name matches | test_sm_01_an_exact_slot_name_matches |
+| SM-02 | Case and separators are ignored, and the real name comes back | test_sm_02_case_and_separators_are_ignored |
+| SM-03 | A substring of one slot name matches it | test_sm_03_a_substring_of_one_slot_matches_it |
+| SM-04 | An exact match wins over a substring match | test_sm_04_an_exact_match_wins_over_a_substring |
+| SM-05 | A substring matching several slots is refused, and the refusal names them | test_sm_05_several_matches_are_refused_and_named |
+| SM-06 | Text matching no slot is refused | test_sm_06_text_matching_no_slot_is_refused |
+| SM-07 | A slot the game has but this wearer lacks is refused | test_sm_07_a_slot_this_wearer_lacks_is_refused |
+| SM-08 | Empty text is refused rather than matching everything | test_sm_08_empty_text_is_refused |
+
+`SM-02` is where the normaliser earns its place, and it pins that what comes back is the **real** slot
+name — `LEFT_HAND`, not the `LEFTHAND` it was compared as. Only the real one can be passed to `wear()`.
+
+`SM-04` is the reason step 1 exists. Without it a slot whose name is contained in another can never be
+named on a wearer that has both.
+
+`SM-05` differs from how the item match handles ambiguity, deliberately. Items are not listed because a
+match could run to five; a wearer has ten slots in total and a substring rarely hits more than two, so
+naming them tells the player exactly which words will work.
+
+`SM-07` is what "this wearer's slots, not the whole enum" means in practice, and it is the case that
+fails if the matcher reaches for `valid_slot_names()`.
+
+`SM-08` guards the empty string reaching here from `wear ring on `. Matched as a substring it would hit
+every slot; the answer is a refusal, not a list of everything the wearer has.
 
 ## Open decisions
 
