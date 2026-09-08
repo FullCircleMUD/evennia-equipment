@@ -24,7 +24,12 @@ from evennia_equipment.config import (
 from evennia_equipment.log import equipment_log
 from evennia.utils.test_resources import EvenniaCommandTest
 
-from evennia_equipment.contrib.commands import CmdEquipment, CmdRemove, CmdWear
+from evennia_equipment.contrib.commands import (
+    CmdEquipment,
+    CmdInventory,
+    CmdRemove,
+    CmdWear,
+)
 from evennia_equipment.contrib.utils import match_slot, normalise_slot
 from evennia_equipment.targeting import f_identity_in, f_worn_by
 from evennia_targeting.testing import validate_factory
@@ -1780,6 +1785,37 @@ class CarriableTests(DjangoTestCase):
         self.assertEqual(thing.weight, -5.0)
 
 
+class StackableTests(DjangoTestCase):
+    """ST — whether an item is interchangeable with another of its name."""
+
+    def _thing(self, typeclass=None):
+        """Create one carriable object. Not a test."""
+        from evennia import create_object
+        from tests.game_typeclasses import CarriableThing
+
+        return create_object(typeclass or CarriableThing, key="thing", nohome=True)
+
+    def test_st_01_stackable_defaults_to_true(self):
+        """ST-01"""
+        self.assertIs(self._thing().stackable, True)
+
+    def test_st_02_a_subclass_can_declare_it_false(self):
+        """ST-02"""
+        from tests.game_typeclasses import Longsword
+
+        self.assertIs(self._thing(Longsword).stackable, False)
+
+    def test_st_03_a_non_boolean_is_refused(self):
+        """ST-03"""
+        thing = self._thing()
+        for value in (1, 0, "yes", None, []):
+            with self.subTest(value=value):
+                # Not truthiness: stackable = 1 would pass a truth test and
+                # mean nothing.
+                with self.assertRaises(AttributeError):
+                    thing.stackable = value
+
+
 class CarryingTests(DjangoTestCase):
     """CA — rebuilding a carrier's weight from its contents."""
 
@@ -2764,3 +2800,176 @@ class EquipmentCommandTests(EvenniaCommandTest):
         hand = next(ln for ln in out.splitlines() if "Left Hand" in ln)
         # "Right Hand" is the longest, so both names start past it.
         self.assertEqual(head.index("an iron"), hand.index("an iron"))
+
+
+class InventoryCommandTests(EvenniaCommandTest):
+    """CI — what a player is carrying but not wearing."""
+
+    def _wearer(self, typeclass=None):
+        """Create a wearer in a room. Not a test."""
+        from evennia import create_object
+        from tests.game_typeclasses import Humanoid
+
+        return create_object(
+            typeclass or Humanoid, key="wearer", location=self.room1
+        )
+
+    def _held(self, wearer, typeclass, key):
+        """Create an item and move it in, as picking one up does.
+
+        Created in the room and moved rather than made in place: only a real
+        move fires ``at_object_receive``, and without it the carried total is
+        never rebuilt — which is what the summary reads.
+        """
+        from evennia import create_object
+
+        item = create_object(typeclass, key=key, location=self.room1)
+        item.move_to(wearer, quiet=True)
+        return item
+
+    def test_ci_01_carried_items_are_listed(self):
+        """CI-01"""
+        from tests.game_typeclasses import CarriableThing
+
+        wearer = self._wearer()
+        self._held(wearer, CarriableThing, "a healing potion")
+        out = self.call(CmdInventory(), "", caller=wearer)
+        self.assertIn("a healing potion", out)
+
+    def test_ci_02_a_worn_item_is_not_listed(self):
+        """CI-02"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, Helmet, "an iron helmet")
+        wearer.wear(helmet)
+        out = self.call(CmdInventory(), "", caller=wearer)
+        # The reason this replaces Evennia's CmdInventory, which lists
+        # contents and so shows a player their armour as though it were in a
+        # sack.
+        self.assertNotIn("an iron helmet", out)
+
+    def test_ci_03_stackable_items_sharing_a_key_are_one_line(self):
+        """CI-03"""
+        from tests.game_typeclasses import CarriableThing
+
+        wearer = self._wearer()
+        for _ in range(3):
+            self._held(wearer, CarriableThing, "a healing potion")
+        out = self.call(CmdInventory(), "", caller=wearer)
+        self.assertEqual(out.count("a healing potion"), 1)
+        self.assertIn("(3)", out)
+
+    def test_ci_04_items_are_named_through_get_display_name(self):
+        """CI-04"""
+        from tests.game_typeclasses import ShroudedHelmet
+
+        wearer = self._wearer()
+        self._held(wearer, ShroudedHelmet, "an iron helmet")
+        out = self.call(CmdInventory(), "", caller=wearer)
+        self.assertIn("something", out)
+        self.assertNotIn("an iron helmet", out)
+
+    def test_ci_05_stacking_is_by_key_not_by_displayed_name(self):
+        """CI-05"""
+        from tests.game_typeclasses import CarriableThing, ShroudedHelmet
+
+        wearer = self._wearer()
+        self._held(wearer, CarriableThing, "a rock")
+        self._held(wearer, ShroudedHelmet, "a stone")
+        out = self.call(CmdInventory(), "", caller=wearer)
+        # Different keys, and one of them displays as "something". Stacking by
+        # what is shown would still keep them apart here; stacking by key is
+        # what keeps the counts real when several display the same.
+        self.assertIn("a rock", out)
+        self.assertIn("something", out)
+
+    def test_ci_06_carrying_nothing_says_so(self):
+        """CI-06"""
+        out = self.call(CmdInventory(), "", caller=self._wearer())
+        self.assertIn("not carrying anything", out.lower())
+
+    def test_ci_07_extra_lines_is_empty_by_default(self):
+        """CI-07"""
+        self.assertEqual(CmdInventory().extra_lines(), [])
+
+    def test_ci_08_extra_lines_appear_between_items_and_summary(self):
+        """CI-08"""
+        from tests.game_typeclasses import CarriableThing
+
+        class CmdWithBalances(CmdInventory):
+            def extra_lines(self):
+                return ["  8 gold"]
+
+        wearer = self._wearer()
+        self._held(wearer, CarriableThing, "a healing potion")
+        out = self.call(CmdWithBalances(), "", caller=wearer)
+        # A balance is a thing you are carrying, so it belongs above the line
+        # that totals what you carry.
+        self.assertLess(out.index("a healing potion"), out.index("8 gold"))
+        self.assertLess(out.index("8 gold"), out.lower().index("carrying"))
+
+    def test_ci_09_the_summary_gives_the_weight_carried(self):
+        """CI-09"""
+        from tests.game_typeclasses import HeavyThing
+
+        wearer = self._wearer()
+        self._held(wearer, HeavyThing, "an anvil")
+        out = self.call(CmdInventory(), "", caller=wearer)
+        self.assertIn("3.0", out)
+
+    def test_ci_10_the_summary_names_the_limit_when_one_is_set(self):
+        """CI-10"""
+        from tests.game_typeclasses import HeavyThing
+
+        wearer = self._wearer()
+        wearer.max_carrying_capacity = 40.0
+        self._held(wearer, HeavyThing, "an anvil")
+        out = self.call(CmdInventory(), "", caller=wearer)
+        self.assertIn("40.0", out)
+
+    def test_ci_11_the_summary_omits_an_unlimited_limit(self):
+        """CI-11"""
+        wearer = self._wearer()
+        out = self.call(CmdInventory(), "", caller=wearer)
+        # Unlimited is the default, so "Carrying 0.0 of inf." is the ordinary
+        # case rather than an edge one.
+        self.assertNotIn("inf", out.lower())
+
+    def test_ci_12_an_unstackable_item_is_listed_on_its_own(self):
+        """CI-12"""
+        from tests.game_typeclasses import Longsword
+
+        wearer = self._wearer()
+        self._held(wearer, Longsword, "a longsword")
+        out = self.call(CmdInventory(), "", caller=wearer)
+        self.assertIn("a longsword", out)
+        self.assertNotIn("(1)", out)
+
+    def test_ci_13_two_unstackable_items_sharing_a_key_are_two_lines(self):
+        """CI-13"""
+        from tests.game_typeclasses import Longsword
+
+        wearer = self._wearer()
+        self._held(wearer, Longsword, "a longsword")
+        self._held(wearer, Longsword, "a longsword")
+        out = self.call(CmdInventory(), "", caller=wearer)
+        # The case stackable exists for: two longswords with one name and
+        # different durability are two things to their owner.
+        self.assertEqual(out.count("a longsword"), 2)
+        self.assertNotIn("(2)", out)
+
+    def test_ci_14_stackable_and_unstackable_are_listed_together(self):
+        """CI-14"""
+        from tests.game_typeclasses import CarriableThing, Longsword
+
+        wearer = self._wearer()
+        for _ in range(2):
+            self._held(wearer, CarriableThing, "a healing potion")
+        for _ in range(2):
+            self._held(wearer, Longsword, "a longsword")
+        out = self.call(CmdInventory(), "", caller=wearer)
+        # The ordinary inventory. Fails on one rule for the whole listing.
+        self.assertEqual(out.count("a healing potion"), 1)
+        self.assertIn("(2)", out)
+        self.assertEqual(out.count("a longsword"), 2)

@@ -17,6 +17,7 @@ Behaviour is agreed here first, before any test or code — see
 |---|---|
 | `SC` | The scaffold — the library is installed and the runner reaches it |
 | `CR` | `EquipmentCarriableMixin` — an item's weight, and what may be stored in it |
+| `ST` | `stackable` — whether an item is interchangeable with another of its name |
 | `CA` | `EquipmentCarryingMixin` — rebuilding a carrier's total weight from its contents |
 | `PR` | `at_pre_object_receive` — refusing an object that cannot be carried |
 | `RC` | `at_object_receive` — rebuilding when something arrives |
@@ -43,6 +44,7 @@ Behaviour is agreed here first, before any test or code — see
 | `CW` | `contrib.commands.CmdWear` — the command a player types |
 | `CM` | `contrib.commands.CmdRemove` — the command a player types to take something off |
 | `CE` | `contrib.commands.CmdEquipment` — the slot sheet a player reads |
+| `CI` | `contrib.commands.CmdInventory` — what a player is carrying but not wearing |
 
 ## Fixtures
 
@@ -75,6 +77,7 @@ rather than faking one. It imports Evennia, so tests import it inside a test bod
 | `Ring` | Two groups of one, so a second lands on the other hand |
 | `Collar` | Declares a slot no humanoid has |
 | `TwinRing` | A ring comparing equal to any other of its kind, as a consumer's typeclass may |
+| `Longsword` | Declares `stackable = False`, as a game with durability does |
 | `Humanoid` | A wearer with the humanoid body plan |
 | `Dog` | A wearer with a different body plan, so `body_slots` is proved to be read |
 | `Chimera` | Two slots where one name contains the other, so exact-match-wins is provable |
@@ -147,6 +150,28 @@ Booleans are refused explicitly, because `bool` subclasses `int` in Python: `isi
 descriptor, so a consumer writing `item.db.weight` stores whatever they like. The case exists so the
 limit is stated rather than discovered, and so it is not later "fixed" by chasing the
 `AttributeHandler` — which cannot be done from the library side.
+
+### ST — whether an item stacks
+
+`stackable` says whether this item is interchangeable with another of the same name. **`True` by
+default**, and validated in `at_set()` like every other stored value: a non-boolean is refused at the
+assignment that made it, rather than quietly making everything stack.
+
+The library never asks *why*. A game with durability sets it `False` on anything that wears — two
+longswords are not the same longsword once one is chipped — and the library learns nothing about
+durability in the process. Charges, enchantment and ownership are all the same shape.
+
+It exists because a listing has to decide whether to write one line or two, and that is a question only
+the game can answer. `contrib`'s `inventory` is the first caller.
+
+| ID | Case | Test function |
+|---|---|---|
+| ST-01 | Stackable defaults to `True` | test_st_01_stackable_defaults_to_true |
+| ST-02 | A subclass can declare it `False` | test_st_02_a_subclass_can_declare_it_false |
+| ST-03 | A non-boolean is refused | test_st_03_a_non_boolean_is_refused |
+
+`ST-03` is the mirror of `CR-10`, which refuses a boolean where a number is wanted. Here anything that
+is *not* a boolean is refused — `stackable = 1` would work under a truthiness check and mean nothing.
 
 ### CA — rebuilding a carrier's weight
 
@@ -1232,6 +1257,82 @@ Collapsing it is a judgement about wording, which is the consumer's.
 
 `CE-08` is what makes it a column rather than a list. It fails on any implementation using a fixed
 width smaller than the longest name.
+
+### CI — the inventory command
+
+```
+inventory
+inv
+i
+```
+
+What the wearer is carrying and not wearing, then whatever the consumer adds, then the carrying
+summary:
+
+```
+Inventory:
+
+  a healing potion (3)
+  an iron helmet
+
+  8 gold, 12 wheat          <- extra_lines(), empty by default
+
+Carrying 12.5 of 40.0.
+```
+
+**This is the one command with a seam**, and it earns it on the rule the rest of contrib is held to: a
+named caller that needs it, and a position no override could reach. A game's fungible balances —
+currency, resources — are more items in the listing rather than a footer after it, so they belong
+between the items and the summary. `extra_lines()` returns `[]`, and a consumer returns its own.
+
+**An item stacks if it says it does.** `stackable` is `True` by default, so two things with one key
+become one line and a count. A game with durability, charges or ownership sets it `False` on those
+items, and each then gets its own line — two longswords are not the same longsword once one is chipped,
+and only the game knows that.
+
+**Stacking is by key, not by displayed name.** Stacking by what is shown would merge a seen and an
+unseen copy of the same thing, and give a blind player a single `Something (50)` where the real
+groupings tell them more. The name is rendered per group through `get_display_name()` afterwards.
+
+**The summary names a limit only when there is one.** Capacity defaults to `float("inf")`, so a game
+that never sets one would otherwise read `Carrying 12.5 of inf.`
+
+| ID | Case | Test function |
+|---|---|---|
+| CI-01 | Carried items are listed | test_ci_01_carried_items_are_listed |
+| CI-02 | A worn item is not listed | test_ci_02_a_worn_item_is_not_listed |
+| CI-03 | Stackable items sharing a key are one line with a count | test_ci_03_stackable_items_sharing_a_key_are_one_line |
+| CI-04 | Items are named through `get_display_name()` | test_ci_04_items_are_named_through_get_display_name |
+| CI-05 | Stacking is by key, not by displayed name | test_ci_05_stacking_is_by_key_not_by_displayed_name |
+| CI-12 | An unstackable item is listed on its own | test_ci_12_an_unstackable_item_is_listed_on_its_own |
+| CI-13 | Two unstackable items sharing a key are two lines | test_ci_13_two_unstackable_items_sharing_a_key_are_two_lines |
+| CI-14 | Stackable and unstackable items are listed together | test_ci_14_stackable_and_unstackable_are_listed_together |
+| CI-06 | Carrying nothing says so | test_ci_06_carrying_nothing_says_so |
+| CI-07 | `extra_lines()` returns nothing by default | test_ci_07_extra_lines_is_empty_by_default |
+| CI-08 | A consumer's extra lines appear between the items and the summary | test_ci_08_extra_lines_appear_between_items_and_summary |
+| CI-09 | The summary gives the weight carried | test_ci_09_the_summary_gives_the_weight_carried |
+| CI-10 | The summary names the limit when one is set | test_ci_10_the_summary_names_the_limit_when_one_is_set |
+| CI-11 | The summary omits the limit when capacity is unlimited | test_ci_11_the_summary_omits_an_unlimited_limit |
+
+`CI-02` is the whole reason this replaces Evennia's `CmdInventory`, which lists `contents` and so shows
+a player their armour as though it were in a sack.
+
+`CI-05` is the case that decides between two readings of "stack by name". Two items with one key, one
+of which this looker cannot make out, must stay two lines — the counts are then the real ones, and a
+blind player reads the groupings rather than a single total.
+
+`CI-13` is the case `stackable` exists for, and the one no rule inside a command could reach. Two
+longswords with the same name and different durability are two things to their owner and one thing to
+anything comparing names. The item answers, because only the game knows.
+
+`CI-14` is the mixture, which is the ordinary inventory: potions stacked, weapons not. It fails on an
+implementation that picks one rule for the whole listing rather than asking each item.
+
+`CI-08` pins the position rather than the existence. Appending after the summary would be easy and
+wrong: a balance is a thing you are carrying, and belongs above the line that totals what you carry.
+
+`CI-11` is what stops the default configuration looking broken. A game with no capacity limit is the
+ordinary case, not an edge one.
 
 ## Open decisions
 

@@ -522,6 +522,44 @@ would be noise on every line a player has not filled.
 but `worn_items` genuinely holds it twice and showing it once would leave a hand looking free.
 Collapsing it is a judgement about wording, which belongs to whoever replaces the command.
 
+### Reading an inventory
+
+`CmdInventory` replaces Evennia's, which lists `contents` and so shows a player their armour as though
+it were in a sack. Ours lists what is held and **not** worn:
+
+```
+Inventory:
+
+  a healing potion (3)
+  a longsword
+  a longsword
+
+  8 gold, 12 wheat
+
+Carrying 9.5 of 40.0.
+```
+
+**`stackable` decides whether two things are one line.** It is on `EquipmentCarriableMixin`, `True` by
+default, and validated as a real `bool` — `stackable = 1` would pass a truthiness check and mean
+nothing. A game with durability, charges or ownership sets it `False` on the items that differ, and the
+library never learns why. Two longswords are not the same longsword once one is chipped, and only the
+game knows that.
+
+It is on the item rather than in the command because "is this the same as that" is an item's question.
+A rule inside a listing could only compare names, and names are exactly what fails to distinguish them.
+
+**Stacking is by key, not by displayed name.** Stacking by what is shown would merge a seen and an
+unseen copy of one thing, and hand a blind player a single `Something (50)` where the real groupings
+tell them more. Each group is then rendered once through `get_display_name()`.
+
+**`extra_lines()` is the one seam contrib provides.** It returns `[]`, and a consumer returns its
+currency and resource balances. Those are more things being carried rather than a footer after them, so
+they sit between the items and the summary — a position no override of the rendering could reach, which
+is what earns the seam under the rule the rest of contrib is held to.
+
+**The summary names a limit only when there is one.** Capacity defaults to `float("inf")`, so a game
+that never sets one would otherwise read `Carrying 9.5 of inf.`
+
 **The mixin resolves the name, so the command does not.** `wear()` and `remove()` each take a string
 or an object, and a string is matched against what the wearer holds with `f_key_matches` — the same
 filter path as everything else the library walks.

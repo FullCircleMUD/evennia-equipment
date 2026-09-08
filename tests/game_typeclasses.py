@@ -13,6 +13,7 @@ from evennia import DefaultObject
 from evennia.typeclasses.attributes import AttributeProperty
 
 from evennia_equipment.carriable import (
+    BooleanProperty,
     EquipmentCarriableMixin,
     NonNegativeNumberProperty,
     WeightProperty,
@@ -309,3 +310,10 @@ class ShroudedHelmet(Helmet):
 
     def get_display_name(self, looker=None, **kwargs):
         return "something"
+
+
+class Longsword(CarriableThing):
+    """An item that never stacks, as a game with durability declares its
+    weapons. ST-02."""
+
+    stackable = BooleanProperty(False)

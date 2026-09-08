@@ -54,6 +54,22 @@ class NonNegativeNumberProperty(AttributeProperty):
         return float(value)
 
 
+class BooleanProperty(AttributeProperty):
+    """A stored value that must be a real ``bool``.
+
+    Not truthiness: ``stackable = 1`` would pass a truth test and mean nothing,
+    and the mistake would only surface as a listing that stacked things it
+    should not have.
+    """
+
+    def at_set(self, value, obj):
+        if not isinstance(value, bool):
+            raise AttributeError(
+                f"{self._key} must be True or False, not {value!r}."
+            )
+        return value
+
+
 class WeightProperty(NonNegativeNumberProperty):
     """A weight, which tells whoever is holding the object when it changes.
 
@@ -76,6 +92,11 @@ class EquipmentCarriableMixin:
     """
 
     weight = WeightProperty(0.0)
+
+    # True by default: with no game input, two things named the same are the
+    # same thing. A game with durability, charges or ownership sets it False on
+    # the items that differ, and the library learns nothing about why.
+    stackable = BooleanProperty(True)
 
     @property
     def effective_weight(self):

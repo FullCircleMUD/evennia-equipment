@@ -158,3 +158,75 @@ class CmdEquipment(Command):
             lines.append(f"  {bracket}{pad}|w{item.get_display_name(caller)}|n")
 
         caller.msg("\n".join(lines))
+
+
+class CmdInventory(Command):
+    """
+    See what you are carrying.
+
+    Usage:
+        inventory
+        inv
+        i
+
+    Lists what you hold but are not wearing, and what it all weighs. Type
+    `equipment` for what you have on.
+    """
+
+    key = "inventory"
+    aliases = ["inv", "i"]
+    locks = "cmd:all()"
+    help_category = "Items"
+
+    def extra_lines(self):
+        """Lines to show between the items and the carrying summary.
+
+        Empty here, and the one seam contrib provides. A game's currency and
+        resource balances are more things being carried rather than a footer
+        after them, so they belong above the line that totals what is carried —
+        a position no override of the rendering could reach.
+
+        Returns:
+            list: Strings, already formatted. Empty by default.
+        """
+        return []
+
+    def func(self):
+        caller = self.caller
+
+        # Stacked by key, not by what is shown: two copies of one thing, only
+        # one of which this looker can make out, must stay two lines or the
+        # counts stop being the real ones.
+        stacks = {}
+        singles = []
+        for item in caller.get_carried():
+            if getattr(item, "stackable", True):
+                stacks.setdefault(item.key, []).append(item)
+            else:
+                singles.append(item)
+
+        items = []
+        for group in stacks.values():
+            name = group[0].get_display_name(caller)
+            count = len(group)
+            items.append(f"  {name} ({count})" if count > 1 else f"  {name}")
+        items.extend(f"  {item.get_display_name(caller)}" for item in singles)
+
+        lines = ["|wInventory:|n", ""]
+        lines.extend(items or ["  You are not carrying anything."])
+
+        extra = self.extra_lines()
+        if extra:
+            lines.append("")
+            lines.extend(extra)
+
+        carried = caller.current_weight_carried
+        capacity = caller.effective_capacity
+        lines.append("")
+        # Unlimited is the default, so naming it would read as "of inf".
+        if capacity == float("inf"):
+            lines.append(f"Carrying {carried:.1f}.")
+        else:
+            lines.append(f"Carrying {carried:.1f} of {capacity:.1f}.")
+
+        caller.msg("\n".join(lines))

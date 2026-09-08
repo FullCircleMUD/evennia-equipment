@@ -2,6 +2,28 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-08 — the inventory command, and stackable
+
+`CmdInventory`, the last of contrib's four, and the core property it needed. 272 tests.
+
+- **`stackable` on `EquipmentCarriableMixin`**, `True` by default and validated as a real `bool`. A
+  game with durability sets it `False` on those items; the library never learns why. Cases `ST`.
+- **It is on the item, not in the command.** "Is this the same as that" is an item's question, and a
+  rule inside a listing could only compare names — which is exactly what fails to tell two longswords
+  apart when one is chipped. Cases `CI-13`, `CI-14`.
+- **Stacking is by key, not displayed name**, so a seen and an unseen copy stay two lines and a blind
+  player reads the real groupings rather than one total. Case `CI-05`.
+- **`extra_lines()` is contrib's one seam**, returning `[]`. A game's balances are more things being
+  carried rather than a footer after them, so they sit between the items and the summary — a position
+  no override of the rendering could reach. Case `CI-08`.
+- **The summary omits the limit when capacity is unlimited**, which is the default and therefore the
+  ordinary case. Case `CI-11`.
+
+`CI-09` failed on a test artefact worth remembering: `create_object(location=...)` does not fire
+`at_object_receive`, so the carried total is never rebuilt and the summary read `0.0`. The suite
+already knew — `RC-02` rebuilds by hand — but a command reading a live total needs the real path, so
+these tests create in the room and `move_to` the wearer, which is what picking something up does.
+
 ## 2026-09-08 — the equipment command
 
 `CmdEquipment`, the third of contrib's four. 255 tests.
