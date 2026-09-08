@@ -217,6 +217,25 @@ somebody.
 This is what makes `wield` and `hold` more than `wear` with a different word printed, and it opens a
 command syntax the library does not otherwise reach — `wear ring on right finger`.
 
+**`remove()` takes a slot too, and there it can stand alone.** Wearing nothing into a slot means
+nothing, so `wear()` keeps its item required; taking off whatever is on the right finger is a complete
+instruction, so `remove(slot=...)` needs no item.
+
+| Call | Means |
+|---|---|
+| `remove("ring")` | the worn items matching, first if they share a key |
+| `remove("ring", slot="RIGHT_FINGER")` | that item, and only if it is in that slot |
+| `remove(None, slot="RIGHT_FINGER")` | whatever is in that slot |
+| `remove()` | neither — refused rather than guessed at |
+
+**Two identical rings is what the argument is for.** `Which ring do you mean?` has no answer a player
+can give when both keys are the same, so naming the slot is the only way to say which hand. Nothing
+else on the surface reaches it.
+
+Which decides how the two arguments combine: given both, **the string confirms what is in the slot**
+rather than being resolved on its own. Resolving independently returns the first of the two rings and
+then fails the identity check against the slot — refusing the exact call the argument exists to serve.
+
 `get_all_worn()` and `get_carried()` are both built by walking `contents`, not the slot map. That
 deduplicates a multi-slot item, keeps a deleted object from reappearing, and makes the two a partition
 — they differ by one `not`, so nothing a wearer holds can fall through both.

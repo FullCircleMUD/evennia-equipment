@@ -997,6 +997,107 @@ class RemoveTests(DjangoTestCase):
         self.assertTrue(removed)
         self.assertIsNone(wearer.worn_items["RIGHT_HAND"])
 
+    # --- naming a slot -----------------------------------------------------
+
+    def test_rm_23_a_named_slot_alone_removes_what_is_in_it(self):
+        """RM-23"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._worn(wearer, Helmet)
+        removed, _ = wearer.remove(slot="HEAD")
+        self.assertTrue(removed)
+        self.assertIsNone(wearer.worn_items["HEAD"])
+        self.assertIn(helmet, wearer.get_carried())
+
+    def test_rm_24_naming_one_slot_frees_every_slot_it_occupied(self):
+        """RM-24"""
+        from tests.game_typeclasses import Greatsword
+
+        wearer = self._wearer()
+        self._worn(wearer, Greatsword)
+        removed, _ = wearer.remove(slot="RIGHT_HAND")
+        self.assertTrue(removed)
+        self.assertIsNone(wearer.worn_items["RIGHT_HAND"])
+        self.assertIsNone(wearer.worn_items["LEFT_HAND"])
+
+    def test_rm_25_a_named_slot_this_wearer_does_not_have_is_refused(self):
+        """RM-25"""
+        wearer = self._wearer()
+        removed, message = wearer.remove(slot="DOG_NECK")
+        self.assertFalse(removed)
+        self.assertIn("DOG_NECK", message)
+        self.assertIn("have no", message.lower())
+
+    def test_rm_26_a_named_slot_holding_nothing_is_refused(self):
+        """RM-26"""
+        wearer = self._wearer()
+        removed, message = wearer.remove(slot="HEAD")
+        self.assertFalse(removed)
+        # Different from having no such slot: this one exists and is empty,
+        # and only that answer invites the player to look again.
+        self.assertIn("nothing", message.lower())
+        self.assertIn("HEAD", message)
+
+    def test_rm_27_an_item_and_a_slot_remove_that_item_from_that_slot(self):
+        """RM-27"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        ring = self._named(wearer, Ring, "iron ring")
+        removed, _ = wearer.remove("iron ring", slot="LEFT_HAND")
+        self.assertTrue(removed)
+        self.assertFalse(wearer.is_worn(ring))
+
+    def test_rm_28_an_item_worn_elsewhere_than_the_named_slot_is_refused(self):
+        """RM-28"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        ring = self._named(wearer, Ring, "iron ring")
+        # Worn on the left; the right was named.
+        removed, message = wearer.remove("iron ring", slot="RIGHT_HAND")
+        self.assertFalse(removed)
+        self.assertTrue(message)
+        self.assertIs(wearer.worn_items["LEFT_HAND"], ring)
+
+    def test_rm_29_of_two_items_sharing_a_key_the_one_in_the_slot_is_removed(self):
+        """RM-29"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        left = self._named(wearer, Ring, "iron ring")
+        right = self._named(wearer, Ring, "iron ring")
+        # Same key, one on each hand. "Which ring do you mean?" has no answer
+        # a player could give, so the slot is the only way to say.
+        removed, _ = wearer.remove("iron ring", slot="RIGHT_HAND")
+        self.assertTrue(removed)
+        self.assertFalse(wearer.is_worn(right))
+        self.assertIs(wearer.worn_items["LEFT_HAND"], left)
+
+    def test_rm_30_a_slot_named_as_an_enum_member_works(self):
+        """RM-30"""
+        from tests.game_typeclasses import Helmet
+        from tests.slot_enums import WearSlot
+
+        wearer = self._wearer()
+        self._worn(wearer, Helmet)
+        removed, _ = wearer.remove(slot=WearSlot.HEAD)
+        self.assertTrue(removed)
+        self.assertIsNone(wearer.worn_items["HEAD"])
+
+    def test_rm_31_neither_an_item_nor_a_slot_is_refused(self):
+        """RM-31"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._worn(wearer, Helmet)
+        removed, message = wearer.remove()
+        self.assertFalse(removed)
+        self.assertTrue(message)
+        # A command that failed to parse must not strip anything by default.
+        self.assertIs(wearer.worn_items["HEAD"], helmet)
+
 
 class IdentityTests(DjangoTestCase):
     """ID, ER — what an item is known by, and writing down what is worn."""

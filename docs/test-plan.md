@@ -679,6 +679,24 @@ The passes are ordered the same way, and the second one is what makes the refusa
 Several matches split the same way: items sharing a key are interchangeable, so the first comes off;
 differing keys are a question, and the reply echoes what was typed.
 
+**`slot=` names where to take it from**, and unlike `wear()` it can stand on its own — `remove(None,
+slot=...)` takes off whatever is in that slot. Wearing nothing into a slot means nothing, so `wear()`
+keeps its item required; taking off "whatever is on my right finger" is a complete instruction.
+
+| Call | Means |
+|---|---|
+| `remove("ring")` | the worn items matching, first if they share a key |
+| `remove("ring", slot="RIGHT_FINGER")` | that item, and only if it is in that slot |
+| `remove(None, slot="RIGHT_FINGER")` | whatever is in that slot |
+| `remove()` | neither — a caller bug, refused rather than guessed at |
+
+**Two identical rings is what it is for.** `Which one do you mean?` cannot help when both keys are the
+same, so naming the slot is the only way a player can say which hand. Nothing else on the surface
+solves it.
+
+It is `slot`, not `location`: `location` is Evennia's word for where an object *is*, and a worn ring's
+location is the wearer.
+
 `at_pre_remove(item)` is the one gate, returning `(bool, str)` — the same shape `remove()` returns, so
 a consumer's reason reaches the player rather than being replaced by something generic. It allows by
 default, and the library refuses nothing of its own.
@@ -711,6 +729,15 @@ consumer wanting item-side logic delegates to the item in one line; the reverse 
 | RM-20 | Matches with differing keys are refused with the word that was typed | test_rm_20_matches_with_differing_keys_are_refused_with_the_typed_word |
 | RM-21 | A worn item wins over a carried one matching the same string | test_rm_21_a_worn_item_wins_over_a_carried_one |
 | RM-22 | An object is removed without being resolved | test_rm_22_an_object_is_removed_without_being_resolved |
+| RM-23 | A named slot alone removes whatever is in it | test_rm_23_a_named_slot_alone_removes_what_is_in_it |
+| RM-24 | Naming one slot of a multi-slot item frees every slot it occupied | test_rm_24_naming_one_slot_frees_every_slot_it_occupied |
+| RM-25 | A named slot this wearer does not have is refused | test_rm_25_a_named_slot_this_wearer_does_not_have_is_refused |
+| RM-26 | A named slot holding nothing is refused | test_rm_26_a_named_slot_holding_nothing_is_refused |
+| RM-27 | An item and a slot together remove that item from that slot | test_rm_27_an_item_and_a_slot_remove_that_item_from_that_slot |
+| RM-28 | An item worn somewhere other than the named slot is refused | test_rm_28_an_item_worn_elsewhere_than_the_named_slot_is_refused |
+| RM-29 | Of two items sharing a key, the one in the named slot is removed | test_rm_29_of_two_items_sharing_a_key_the_one_in_the_slot_is_removed |
+| RM-30 | A slot named as an enum member works as its value does | test_rm_30_a_slot_named_as_an_enum_member_works |
+| RM-31 | Neither an item nor a slot is refused | test_rm_31_neither_an_item_nor_a_slot_is_refused |
 
 `RM-02` is the counterpart to `WE-02`: a two-handed item sits under two keys, and freeing only the
 first leaves a phantom holding the other hand for good.
@@ -743,6 +770,20 @@ items do.
 `RM-22` keeps the object path intact. A consumer stripping a specific item — a curse breaking, a
 scripted disarm — holds the object already, and resolving by key would be ambiguous exactly where
 objects are not.
+
+`RM-29` is the case the argument exists for, and the one nothing else on the surface can reach. Two
+rings with the same key, one on each hand: `remove ring` takes the first, and asking "which ring?"
+would have no answer a player could give. The slot is the only way to say which hand.
+
+`RM-24` mirrors `WE-24`. A slot names the item occupying it, and removing that item frees everywhere it
+sits — a greatsword named by one hand does not come half off.
+
+`RM-25` and `RM-26` are separate for the same reason `WE-25` and `WE-26` are. "You have no right
+finger" is about the wearer's body; "you are wearing nothing on your right finger" is about what is
+there now, and only the second invites the player to look again.
+
+`RM-31` is a caller bug rather than a player one — a command that failed to parse. It is refused rather
+than raised, so the contract stays `(bool, str)` and nothing reaches a player as a traceback.
 
 ### GW — what is worn
 

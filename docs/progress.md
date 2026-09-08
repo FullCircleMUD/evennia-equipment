@@ -2,6 +2,27 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-08 — remove() takes a named slot too
+
+`remove(item=None, slot=None)`, and the slot can stand alone. 204 tests.
+
+- **Two identical rings is what it is for.** Same key, one on each hand: `remove ring` takes the first,
+  and "which ring?" has no answer a player could give. The slot is the only way to say which hand.
+  Case `RM-29`.
+- **The slot stands alone**, unlike in `wear()`. Wearing nothing into a slot means nothing; taking off
+  whatever is on the right finger is a complete instruction. Case `RM-23`.
+- **Given both, the string confirms rather than resolves.** Case `RM-24` mirrors `WE-24` — naming one
+  slot of a two-handed item frees both.
+- **Two refusals for a slot**, as `wear()` has: "you have no right finger" is about the wearer's body,
+  "you are wearing nothing on your right finger" is about what is there now. Cases `RM-25`, `RM-26`.
+- **Neither argument is refused, not raised.** A command that failed to parse must not strip anything,
+  and the contract stays `(bool, str)` so nothing reaches a player as a traceback. Case `RM-31`.
+
+The first implementation resolved the item string independently and then checked it was in the named
+slot. For two rings sharing a key that returns the left one, which then fails the identity check
+against `RIGHT_HAND` — refusing the exact call the argument exists to serve. `RM-29` is the only case
+that sees it, and it was written before the code.
+
 ## 2026-09-07 — wear() takes a named slot
 
 `wear(item, slot=...)` puts an item somewhere in particular. 195 tests.

@@ -391,24 +391,75 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
 
         return (None, f"You are not carrying {text}.")
 
-    def remove(self, item):
+    def _worn_in_slot(self, slot):
+        """Return what occupies ``slot``, or why nothing can come off it.
+
+        Args:
+            slot (str): A slot name, already normalised from an enum member.
+
+        Returns:
+            tuple: ``(item, None)`` when something is there, or
+            ``(None, refusal)`` when nothing is.
+        """
+        slots = self.worn_items or {}
+        if slot not in slots:
+            return (None, f"You have no {slot}.")
+        # Two answers, not one. "You have no right finger" is about the
+        # wearer's body; "you are wearing nothing on it" is about what is there
+        # now, and only the second invites the player to look again.
+        if slots[slot] is None:
+            return (None, f"You are wearing nothing on your {slot}.")
+        return (slots[slot], None)
+
+    def remove(self, item=None, slot=None):
         """Free every slot an item occupies, leaving it in ``contents``.
 
         Taking something off does not put it down.
 
-        Takes a string or an object, on the same reasoning as :meth:`wear` and
-        with the search mirrored: a string resolves against what the wearer has
-        on rather than what it carries.
+        ``item`` is a string or an object, on the same reasoning as :meth:`wear`
+        and with the search mirrored: a string resolves against what the wearer
+        has on rather than what it carries.
+
+        **``slot`` can stand on its own**, which is where this differs from
+        :meth:`wear`. Wearing nothing into a slot means nothing, but taking off
+        whatever is on the right finger is a complete instruction. Given both,
+        the item must actually be in that slot — which is the only way to pick
+        between two rings with the same key, one on each hand.
 
         Args:
-            item (Object or str): The object to take off, or what the player
-                typed.
+            item (Object or str, optional): The object to take off, or what the
+                player typed. ``None`` with a ``slot`` means whatever is in it.
+            slot (str or Enum, optional): The place to take it from. An enum
+                member or its value; both are accepted.
 
         Returns:
             tuple: ``(bool, str)`` — whether it came off, and why not if it
             did not.
         """
-        if isinstance(item, str):
+        if item is None and slot is None:
+            return (False, "Remove what?")
+
+        if slot is not None:
+            # An enum member or its value, as wear() takes.
+            slot = getattr(slot, "value", slot)
+            in_slot, refusal = self._worn_in_slot(slot)
+            if in_slot is None:
+                return (False, refusal)
+
+            if item is None:
+                item = in_slot
+            elif isinstance(item, str):
+                # The string confirms what is in the slot rather than being
+                # resolved on its own. Resolving would return the first of two
+                # rings sharing a key — which is the case the slot exists to
+                # get past, so it must not be reintroduced here.
+                if not f_key_matches(item)(in_slot, self):
+                    return (False, f"You are not wearing {item} on your {slot}.")
+                item = in_slot
+            elif item is not in_slot:
+                return (False, f"{item} is not on your {slot}.")
+
+        elif isinstance(item, str):
             resolved, refusal = self._resolve_worn(item)
             if resolved is None:
                 return (False, refusal)
