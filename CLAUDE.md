@@ -21,8 +21,12 @@ For the design wiki, read [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
 
-**The mechanism is complete; the commands are not written.** Five mixins, equipment recovery across
-a world rebuild, and two required settings. What remains is the six commands in `contrib/`. See
+**Core is complete.** Five mixins, wearing and removing by name or by slot, four hooks around them,
+equipment recovery across a world rebuild, and two required settings. A consumer driving it from their
+own code needs nothing further.
+
+What is unwritten is `contrib/` — four optional commands, `wear`, `remove`, `equipment` and
+`inventory`. Opt-in, and a consumer that writes its own never installs them. See
 [docs/progress.md](docs/progress.md).
 
 ## Where to read first

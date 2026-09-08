@@ -5,11 +5,12 @@ underneath: what a character holds, what it weighs, and how much it can take.
 
 ## Status
 
-**The mechanism works; the commands are not written.** An object declares a weight and which slots it
-occupies; a wearer declares a body plan and can wear, remove and list. The carried total keeps itself
-current through arrivals, departures, reloads and weight changes in place, containers nest, and a
-character's equipment survives a world rebuild. Still to come: the commands a player types. Nothing is
-published. See
+**Core works.** An object declares a weight and which slots it occupies; a wearer declares a body plan
+and can wear, remove and list — by name or by slot, with hooks either side of both so a game can apply
+whatever a worn item does. The carried total keeps itself current through arrivals, departures, reloads
+and weight changes in place, containers nest, and a character's equipment survives a world rebuild.
+
+Still to come: `contrib/`, four optional commands a player types. Nothing is published. See
 [docs/progress.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/progress.md).
 
 ## The problem it solves

@@ -365,17 +365,44 @@ moment its source is destroyed, which is the whole point of it. Persisted on the
 
 ## Commands
 
-**All six live in `contrib/`** — `wear`, `remove`, `wield`, `hold`, `equipment`, `inventory`. The test
-in the standards is whether core is fully functional without the folder, and it is: the mixins are
-complete, and a consumer driving `wear()` from their own code loses nothing.
+**Four live in `contrib/`** — `wear`, `remove`, `equipment`, `inventory`. The test in the standards is
+whether core is fully functional without the folder, and it is: the mixins are complete, and a consumer
+driving `wear()` from their own code loses nothing.
 
 They ship because Evennia has no vocabulary for slots, so a consumer would otherwise have a mechanism
-no player can reach. They render plainly and are meant to be read and replaced — a consumer wanting
-different wording subclasses one rather than reimplementing the mechanism behind it.
+no player can reach. Only `inventory` replaces anything of Evennia's; the other three are new words,
+and Evennia merges cmdsets by key, so no explicit removal is needed.
 
-`get`, `drop` and `give` are not among them and need not be. Evennia's `CmdGet` calls
+**`wield` and `hold` are not among them.** They are a game's vocabulary rather than a mechanism: they
+only mean something where an item's natural slot differs from where a player sometimes wants it, and
+their slot names come from a consumer's enum. The capability stays reachable without them —
+`wear sword on wield` does everything `wield sword` does — so a game that wants the shorthand writes
+two short subclasses.
+
+`get`, `drop` and `give` are not among them either, and need not be. Evennia's `CmdGet` calls
 `obj.move_to(caller)`, so `at_pre_object_receive` already fires and the stock commands respect a
 refusal untouched.
+
+**They are replaced wholesale, not extended.** No display hooks, no seams. A consumer wanting different
+output overrides `func()` — which is what FCM will do, since almost all of its inventory rendering is
+its own: fungible balances interleaved with the items, gold, encumbrance, condition labels, and what a
+blind character can make out. Five seams to share fifteen lines of stacking logic is a poor trade, and
+each seam is a shape the next consumer has to fit. A seam gets added when a second consumer asks for
+one, and it will be the right seam because someone will have said where it goes.
+
+**They render like a MUD, not like a debug dump.** Colour, aligned columns, slot names title-cased.
+FCM's `equipment` and `inventory` are the benchmark:
+
+```
+Equipped Items
+
+  <Head>        a leather cap  (worn)
+  <Left Hand>   a shortsword   (pristine)
+  <Right Hand>
+```
+
+What contrib cannot do is anything reading a game's own attributes — condition labels, visibility,
+balances. Those are why a consumer replaces the command rather than configures it.
 
 **The mixin resolves the name, so the command does not.** `wear()` and `remove()` each take a string
 or an object, and a string is matched against what the wearer holds with `f_key_matches` — the same
@@ -414,8 +441,9 @@ the object.
 
 ## Not yet decided
 
-Nothing in the mechanism. The commands are agreed in shape and unwritten — six of them, in
-`contrib/`.
-- Whether the library renders equipment displays or returns data for the consumer to format. Both of
-  FCM's hard imports live in its render methods.
-- The item-side gate a consumer overrides to refuse an item, and its default.
+Nothing. The mechanism is complete, and the four commands are agreed in shape and unwritten — work
+rather than an open question.
+
+Two things that were open here are settled above: the commands render, and they are replaced wholesale
+rather than configured; and the gate on wearing is on the wearer, `at_pre_wear()`, with no item-side
+counterpart — a consumer wanting one delegates to the item in a line.
