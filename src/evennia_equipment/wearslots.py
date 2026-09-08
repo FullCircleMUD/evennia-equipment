@@ -283,6 +283,10 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
             if not groups:
                 return (False, f"{item} cannot be worn on your {slot}.")
 
+        allowed, refusal = self.at_pre_wear(item)
+        if not allowed:
+            return (False, refusal)
+
         # Choose before writing anything. Filling slots as they are checked
         # would leave a two-handed item in one hand when the other turns out
         # to be occupied.
@@ -291,9 +295,52 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
                 worn = dict(slots)
                 worn.update({slot: item for slot in group})
                 self.worn_items = worn
+                # After the write, so a consumer recalculating from
+                # get_all_worn() sees the item it was just told about.
+                self.at_post_wear(item, tuple(group))
                 return (True, f"You wear {item}.")
 
         return (False, f"You have nowhere to wear {item}.")
+
+    def at_pre_wear(self, item):
+        """Whether this item may go on. Override to refuse.
+
+        The library refuses nothing of its own. A consumer overrides this for a
+        class restriction, an alignment rule, a cursed item that will not be
+        worn by the unworthy — whatever their game holds.
+
+        Fires after the ordinary refusals and before a slot is chosen, so it
+        never sees a state the library would have rejected anyway, and never has
+        to reason about where the item is going.
+
+        Args:
+            item (Object): The object about to go on.
+
+        Returns:
+            tuple: ``(bool, str)`` — the same shape ``wear()`` returns, so a
+            consumer's reason reaches the player rather than being replaced by
+            something generic.
+        """
+        return (True, "")
+
+    def at_post_wear(self, item, slots):
+        """Called once an item is in its slots. Override to react.
+
+        The moment a consumer learns the worn set changed. A ring of strength is
+        worth nothing until something recalculates the wearer's strength, and
+        the library has no idea what a game's stats are.
+
+        Fires only on success, and after the slots are written — so
+        ``get_all_worn()`` already includes the item.
+
+        Args:
+            item (Object): What went on.
+            slots (tuple): The slot names it now fills.
+
+        Returns:
+            None: Nothing is expected back. A hook that could refuse would be
+            ``at_pre_wear()``.
+        """
 
     def update_worn_equipment_record(self):
         """Write down the identities of what this wearer currently has on.
@@ -479,7 +526,31 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
         # `is`, not `==`: a consumer's typeclass may compare by key or by token
         # id, and equality would then free every slot holding something that
         # merely looks the same.
+        freed = tuple(name for name, held in worn.items() if held is item)
         self.worn_items = {
-            slot: (None if held is item else held) for slot, held in worn.items()
+            name: (None if held is item else held) for name, held in worn.items()
         }
+        # Gathered before the write and passed, because afterwards nothing
+        # records where the item sat.
+        self.at_post_remove(item, freed)
         return (True, f"You remove {item}.")
+
+    def at_post_remove(self, item, slots):
+        """Called once an item has come off. Override to react.
+
+        The mirror of :meth:`at_post_wear`, and the moment a consumer undoes
+        whatever wearing applied — a ring of strength stops helping when it
+        comes off, and nothing else tells a game that happened.
+
+        Fires only on success, and after the slots are freed, so
+        ``get_all_worn()`` no longer includes the item.
+
+        Args:
+            item (Object): What came off.
+            slots (tuple): The slot names it was filling. Passed rather than
+                looked up, because by now it is recorded nowhere else.
+
+        Returns:
+            None: Nothing is expected back. A hook that could refuse would be
+            ``at_pre_remove()``.
+        """

@@ -712,6 +712,88 @@ class WearTests(DjangoTestCase):
         self.assertTrue(worn)
         self.assertIs(wearer.worn_items["RIGHT_HAND"], ring)
 
+    # --- the hooks ---------------------------------------------------------
+
+    def test_we_30_at_pre_wear_allows_by_default(self):
+        """WE-30"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, Helmet)
+        self.assertEqual(wearer.at_pre_wear(helmet), (True, ""))
+
+    def test_we_31_a_consumer_refusing_stops_the_wearing(self):
+        """WE-31"""
+        from tests.game_typeclasses import Helmet, UnwearableHumanoid
+
+        wearer = self._wearer(UnwearableHumanoid)
+        helmet = self._held(wearer, Helmet)
+        worn, _ = wearer.wear(helmet)
+        self.assertFalse(worn)
+        self.assertIsNone(wearer.worn_items["HEAD"])
+
+    def test_we_32_the_consumers_reason_is_returned(self):
+        """WE-32"""
+        from tests.game_typeclasses import Helmet, UnwearableHumanoid
+
+        wearer = self._wearer(UnwearableHumanoid)
+        helmet = self._held(wearer, Helmet)
+        _, message = wearer.wear(helmet)
+        self.assertEqual(message, f"{helmet} will not go on.")
+
+    def test_we_33_at_post_wear_sees_the_slots_already_filled(self):
+        """WE-33"""
+        from tests.game_typeclasses import Helmet, WatchfulHumanoid
+
+        wearer = self._wearer(WatchfulHumanoid)
+        helmet = self._held(wearer, Helmet)
+        wearer.wear(helmet)
+        _, _, worn_at_the_time = wearer.ndb.wear_calls[0]
+        # A consumer recalculating from get_all_worn() has to see the item it
+        # was just told about, or the hook has to be told the answer twice.
+        self.assertEqual(worn_at_the_time, (helmet,))
+
+    def test_we_34_at_post_wear_receives_the_slots_filled(self):
+        """WE-34"""
+        from tests.game_typeclasses import Greatsword, WatchfulHumanoid
+
+        wearer = self._wearer(WatchfulHumanoid)
+        sword = self._held(wearer, Greatsword)
+        wearer.wear(sword)
+        item, slots, _ = wearer.ndb.wear_calls[0]
+        self.assertIs(item, sword)
+        self.assertEqual(set(slots), {"LEFT_HAND", "RIGHT_HAND"})
+
+    def test_we_35_at_post_wear_does_not_fire_when_refused(self):
+        """WE-35"""
+        from tests.game_typeclasses import Helmet, UnwearableWatcher
+
+        wearer = self._wearer(UnwearableWatcher)
+        helmet = self._held(wearer, Helmet)
+        wearer.wear(helmet)
+        self.assertIsNone(wearer.ndb.wear_calls)
+
+    def test_we_36_restore_worn_fires_at_post_wear(self):
+        """WE-36"""
+        from evennia import create_object
+        from tests.game_typeclasses import IdentifiedHelmet, WatchfulHumanoid
+
+        wearer = self._wearer(WatchfulHumanoid)
+        helmet = create_object(
+            IdentifiedHelmet, key="helmet", location=wearer, nohome=True
+        )
+        wearer.wear(helmet)
+        wearer.update_worn_equipment_record()
+        # The rebuild: the record survives, the slots do not.
+        wearer.worn_items = {name: None for name in wearer.worn_items}
+        wearer.ndb.wear_calls = None
+
+        wearer.restore_worn()
+        # A ring of strength put back on without the hook leaves a character
+        # wearing it and no stronger for it.
+        self.assertEqual(len(wearer.ndb.wear_calls), 1)
+        self.assertIs(wearer.ndb.wear_calls[0][0], helmet)
+
 
 class RemoveTests(DjangoTestCase):
     """RM — freeing the slots an item occupies."""
@@ -1097,6 +1179,48 @@ class RemoveTests(DjangoTestCase):
         self.assertTrue(message)
         # A command that failed to parse must not strip anything by default.
         self.assertIs(wearer.worn_items["HEAD"], helmet)
+
+    # --- the post hook -----------------------------------------------------
+
+    def test_rm_32_at_post_remove_sees_the_slots_already_freed(self):
+        """RM-32"""
+        from evennia import create_object
+        from tests.game_typeclasses import Helmet, WatchfulHumanoid
+
+        wearer = create_object(WatchfulHumanoid, key="wearer", nohome=True)
+        helmet = create_object(Helmet, key="Helmet", location=wearer, nohome=True)
+        wearer.wear(helmet)
+        wearer.remove(helmet)
+        _, _, worn_at_the_time = wearer.ndb.remove_calls[0]
+        self.assertEqual(worn_at_the_time, ())
+
+    def test_rm_33_at_post_remove_receives_the_slots_freed(self):
+        """RM-33"""
+        from evennia import create_object
+        from tests.game_typeclasses import Greatsword, WatchfulHumanoid
+
+        wearer = create_object(WatchfulHumanoid, key="wearer", nohome=True)
+        sword = create_object(Greatsword, key="sword", location=wearer, nohome=True)
+        wearer.wear(sword)
+        wearer.remove(sword)
+        item, slots, _ = wearer.ndb.remove_calls[0]
+        self.assertIs(item, sword)
+        # The only moment this is knowable — the slots are freed by now, so
+        # where it sat exists nowhere else.
+        self.assertEqual(set(slots), {"LEFT_HAND", "RIGHT_HAND"})
+
+    def test_rm_34_at_post_remove_does_not_fire_when_refused(self):
+        """RM-34"""
+        from evennia import create_object
+        from tests.game_typeclasses import Helmet, StuckWatcher
+
+        wearer = create_object(StuckWatcher, key="wearer", nohome=True)
+        helmet = create_object(Helmet, key="Helmet", location=wearer, nohome=True)
+        wearer.wear(helmet)
+        wearer.remove(helmet)
+        # Firing anyway would strip a ring's bonus from someone still wearing
+        # it.
+        self.assertIsNone(wearer.ndb.remove_calls)
 
 
 class IdentityTests(DjangoTestCase):

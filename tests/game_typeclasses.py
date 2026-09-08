@@ -133,6 +133,51 @@ class CursedHumanoid(Humanoid):
         return (False, f"{item} will not come off.")
 
 
+class UnwearableHumanoid(Humanoid):
+    """A wearer who will put nothing on, standing in for a consumer's class
+    restriction or alignment rule. WE-31, WE-32, WE-35."""
+
+    def at_pre_wear(self, item):
+        return (False, f"{item} will not go on.")
+
+
+class WatchfulHumanoid(Humanoid):
+    """Records every post hook, with the slots it was given and what the
+    wearer had on at that moment. WE-33 to WE-36, RM-32 to RM-34.
+
+    Recording what ``get_all_worn()`` returned inside the hook is the point:
+    a consumer recalculating stats from it must see the change it was told
+    about, so the ordering is observable rather than assumed.
+    """
+
+    def at_post_wear(self, item, slots):
+        super().at_post_wear(item, slots)
+        self.ndb.wear_calls = (self.ndb.wear_calls or []) + [
+            (item, tuple(slots), tuple(self.get_all_worn()))
+        ]
+
+    def at_post_remove(self, item, slots):
+        super().at_post_remove(item, slots)
+        self.ndb.remove_calls = (self.ndb.remove_calls or []) + [
+            (item, tuple(slots), tuple(self.get_all_worn()))
+        ]
+
+
+class UnwearableWatcher(WatchfulHumanoid):
+    """Records the post hooks and refuses at `at_pre_wear()`, so a refusal is
+    provably silent rather than merely unobserved. WE-35."""
+
+    def at_pre_wear(self, item):
+        return (False, f"{item} will not go on.")
+
+
+class StuckWatcher(WatchfulHumanoid):
+    """Records the post hooks and refuses at `at_pre_remove()`. RM-34."""
+
+    def at_pre_remove(self, item):
+        return (False, f"{item} will not come off.")
+
+
 class Dog(EquipmentWearslotsMixin, DefaultObject):
     """A wearer with a different body plan, so body_slots is proved to be
     read rather than assumed. WS-04."""

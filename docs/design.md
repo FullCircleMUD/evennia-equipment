@@ -236,6 +236,37 @@ Which decides how the two arguments combine: given both, **the string confirms w
 rather than being resolved on its own. Resolving independently returns the first of the two rings and
 then fails the identity check against the slot — refusing the exact call the argument exists to serve.
 
+## Four hooks around wearing
+
+| Hook | Returns | Fires |
+|---|---|---|
+| `at_pre_wear(item)` | `(bool, str)` | after the ordinary refusals, before a slot is chosen |
+| `at_post_wear(item, slots)` | nothing | after the slots are written, on success only |
+| `at_pre_remove(item)` | `(bool, str)` | before anything is freed |
+| `at_post_remove(item, slots)` | nothing | after the slots are freed, on success only |
+
+The library refuses nothing of its own in any of them.
+
+**Equipment changes a character, and the library cannot know how.** A ring of strength is worth nothing
+until something recalculates the wearer's strength, and that has to happen on both edges. Nothing else
+tells a game the worn set moved.
+
+**The pre hooks are on the wearer, not the item.** A cursed item is the item's business, but "you are
+paralysed", "your class cannot use that" and "not in combat" are the wearer's, and an item-side hook
+could not express them. A consumer wanting item-side logic delegates to the item in one line; the
+reverse is not available.
+
+**The post hooks fire after the write.** A consumer recalculating from `get_all_worn()` sees the change
+it was told about, rather than being handed an answer it then has to apply itself.
+
+**They are given the slots.** At post-wear a consumer could read `worn_items` instead; at post-remove it
+cannot, because the slots are freed by then and where the item sat is recorded nowhere else. Passing
+them on both sides keeps the pair symmetrical rather than making one the exception.
+
+`restore_worn()` goes through `wear()`, so a shard move puts the bonuses back with the gear. A restore
+that filled the slots directly would leave a character wearing a ring of strength and no stronger for
+it.
+
 `get_all_worn()` and `get_carried()` are both built by walking `contents`, not the slot map. That
 deduplicates a multi-slot item, keeps a deleted object from reappearing, and makes the two a partition
 — they differ by one `not`, so nothing a wearer holds can fall through both.

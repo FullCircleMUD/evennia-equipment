@@ -2,6 +2,27 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-08 — four hooks around wearing
+
+`at_pre_wear`, `at_post_wear`, `at_pre_remove` and `at_post_remove`. 214 tests.
+
+- **Equipment changes a character, and the library cannot know how.** A ring of strength is worth
+  nothing until something recalculates the wearer's strength, on both edges.
+- **The post hooks fire after the write**, so a consumer recalculating from `get_all_worn()` sees the
+  change it was told about rather than being handed an answer to apply itself. Cases `WE-33`, `RM-32`.
+- **They are given the slots.** At post-wear a consumer could read `worn_items`; at post-remove it
+  cannot, because they are freed by then and where the item sat is recorded nowhere else. Cases
+  `WE-34`, `RM-33`.
+- **Neither post hook fires on a refusal.** One that did would strip a ring's bonus from a character
+  still wearing it. Cases `WE-35`, `RM-34`.
+- **`restore_worn()` goes through `wear()`**, so a shard move puts the bonuses back with the gear.
+  Case `WE-36`.
+
+`WE-35` and `RM-34` first failed with `'DefaultObject' object has no attribute 'wear'`. A typeclass
+defined **inside a test function** cannot be resolved by `create_object` — Evennia looks it up by import
+path and falls back to `DefaultObject` without complaint. Both fixtures moved to
+`tests/game_typeclasses.py`.
+
 ## 2026-09-08 — remove() takes a named slot too
 
 `remove(item=None, slot=None)`, and the slot can stand alone. 204 tests.

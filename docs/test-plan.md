@@ -72,6 +72,10 @@ rather than faking one. It imports Evennia, so tests import it inside a test bod
 | `TwinRing` | A ring comparing equal to any other of its kind, as a consumer's typeclass may |
 | `Humanoid` | A wearer with the humanoid body plan |
 | `Dog` | A wearer with a different body plan, so `body_slots` is proved to be read |
+| `UnwearableHumanoid` | Refuses everything at `at_pre_wear()`, as a class or alignment rule would |
+| `WatchfulHumanoid` | Records every post hook with its slots and what was worn at that moment |
+| `UnwearableWatcher` | A `WatchfulHumanoid` refusing at `at_pre_wear()`, so a silent refusal is provable |
+| `StuckWatcher` | A `WatchfulHumanoid` refusing at `at_pre_remove()` |
 
 **`tests/slot_enums.py`** — the enums the `CF` cases point `EQUIPMENT_WEARSLOTS` at, standing in for a
 consumer's own module. It **imports nothing but `enum`**: `check_settings()` resolves it during
@@ -617,6 +621,13 @@ wearer that has no such place.
 | WE-27 | A named slot that is already occupied is refused | test_we_27_a_named_slot_already_occupied_is_refused |
 | WE-28 | A slot named as an enum member works as its value does | test_we_28_a_slot_named_as_an_enum_member_works |
 | WE-29 | A slot can be named while the item is given as a string | test_we_29_a_slot_can_be_named_while_the_item_is_a_string |
+| WE-30 | `at_pre_wear()` allows wearing by default | test_we_30_at_pre_wear_allows_by_default |
+| WE-31 | A consumer refusing stops the wearing and fills no slot | test_we_31_a_consumer_refusing_stops_the_wearing |
+| WE-32 | The consumer's reason is what `wear()` returns | test_we_32_the_consumers_reason_is_returned |
+| WE-33 | `at_post_wear()` sees the slots already filled | test_we_33_at_post_wear_sees_the_slots_already_filled |
+| WE-34 | `at_post_wear()` receives the slots that were filled | test_we_34_at_post_wear_receives_the_slots_filled |
+| WE-35 | `at_post_wear()` does not fire when wearing is refused | test_we_35_at_post_wear_does_not_fire_when_refused |
+| WE-36 | `restore_worn()` fires `at_post_wear()` for each item put back | test_we_36_restore_worn_fires_at_post_wear |
 
 `WE-05` is the one that bites if the implementation fills slots as it checks them: a group that turns
 out to be blocked half-way through would leave the wearer holding an item in some of its slots and
@@ -658,6 +669,26 @@ give them needs to hear. One message for both would be wrong half the time.
 `WE-28` is a trap that would otherwise bite once per consumer. A game declares `body_slots` with enum
 members and reads `worn_items` keyed by their values, so whichever the library demanded would be the
 other one to somebody.
+
+**The four hooks.** `at_pre_wear(item)` and `at_pre_remove(item)` return `(bool, str)` and can refuse;
+`at_post_wear(item, slots)` and `at_post_remove(item, slots)` return nothing and fire only on success.
+The library refuses nothing of its own in any of them.
+
+They exist because equipment changes a character. A ring of strength is worth nothing until something
+recalculates the wearer's strength, and that has to happen on both edges — the library has no idea what
+a consumer's stats are, and a consumer has no other moment to learn that the set of worn items changed.
+
+`WE-33` is the ordering that makes them usable: the slots are already written when `at_post_wear` runs,
+so a consumer recalculating from `get_all_worn()` sees the item it was told about. Firing before the
+write would give a hook that has to be told the answer twice.
+
+`WE-34` is why the slots are passed. A consumer can read `worn_items` at post-wear, but `RM-33`'s
+mirror cannot — by then the slots are freed and where the item *was* exists nowhere else. Passing them
+on both sides keeps the pair symmetrical rather than making one of them the exception.
+
+`WE-36` is the case that matters after a shard move. Restoring rebuilds the worn set through `wear()`,
+so the bonuses come back with it — a restore that put the items on without firing the hooks would leave
+a character wearing a ring of strength and no stronger for it.
 
 ### RM — removing
 
@@ -738,6 +769,9 @@ consumer wanting item-side logic delegates to the item in one line; the reverse 
 | RM-29 | Of two items sharing a key, the one in the named slot is removed | test_rm_29_of_two_items_sharing_a_key_the_one_in_the_slot_is_removed |
 | RM-30 | A slot named as an enum member works as its value does | test_rm_30_a_slot_named_as_an_enum_member_works |
 | RM-31 | Neither an item nor a slot is refused | test_rm_31_neither_an_item_nor_a_slot_is_refused |
+| RM-32 | `at_post_remove()` sees the slots already freed | test_rm_32_at_post_remove_sees_the_slots_already_freed |
+| RM-33 | `at_post_remove()` receives the slots that were freed | test_rm_33_at_post_remove_receives_the_slots_freed |
+| RM-34 | `at_post_remove()` does not fire when removal is refused | test_rm_34_at_post_remove_does_not_fire_when_refused |
 
 `RM-02` is the counterpart to `WE-02`: a two-handed item sits under two keys, and freeing only the
 first leaves a phantom holding the other hand for good.
@@ -784,6 +818,13 @@ there now, and only the second invites the player to look again.
 
 `RM-31` is a caller bug rather than a player one — a command that failed to parse. It is refused rather
 than raised, so the contract stays `(bool, str)` and nothing reaches a player as a traceback.
+
+`RM-33` is the reason the post hooks are given slots at all. At post-wear a consumer could read
+`worn_items` instead; at post-remove it cannot, because the slots are freed by then and where the item
+sat exists nowhere else. See the hook notes under `WE`.
+
+`RM-34` is the pairing `WE-35` makes on the other side. A refused removal must leave a consumer's stats
+alone, and a post hook that fired anyway would strip a ring's bonus from a character still wearing it.
 
 ### GW — what is worn
 
