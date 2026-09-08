@@ -24,7 +24,7 @@ from evennia_equipment.config import (
 from evennia_equipment.log import equipment_log
 from evennia.utils.test_resources import EvenniaCommandTest
 
-from evennia_equipment.contrib.commands import CmdRemove, CmdWear
+from evennia_equipment.contrib.commands import CmdEquipment, CmdRemove, CmdWear
 from evennia_equipment.contrib.utils import match_slot, normalise_slot
 from evennia_equipment.targeting import f_identity_in, f_worn_by
 from evennia_targeting.testing import validate_factory
@@ -2672,3 +2672,95 @@ class RemoveCommandTests(EvenniaCommandTest):
         ring = self._worn(wearer, Ring, "a ring from a king")
         self.call(CmdRemove(), "ring from a king from left hand", caller=wearer)
         self.assertFalse(wearer.is_worn(ring))
+
+
+class EquipmentCommandTests(EvenniaCommandTest):
+    """CE — the slot sheet a player reads."""
+
+    def _wearer(self, typeclass=None):
+        """Create a wearer in a room. Not a test."""
+        from evennia import create_object
+        from tests.game_typeclasses import Humanoid
+
+        return create_object(
+            typeclass or Humanoid, key="wearer", location=self.room1
+        )
+
+    def _worn(self, wearer, typeclass, key):
+        """Create an item in the wearer's contents and put it on."""
+        from evennia import create_object
+
+        item = create_object(typeclass, key=key, location=wearer)
+        wearer.wear(item)
+        return item
+
+    def test_ce_01_every_slot_is_listed(self):
+        """CE-01"""
+        out = self.call(CmdEquipment(), "", caller=self._wearer())
+        for slot in ("Head", "Body", "Left Hand", "Right Hand"):
+            self.assertIn(slot, out)
+
+    def test_ce_02_slots_appear_in_declaration_order(self):
+        """CE-02"""
+        out = self.call(CmdEquipment(), "", caller=self._wearer())
+        # Humanoid declares HEAD, BODY, LEFT_HAND, RIGHT_HAND in that order.
+        positions = [out.index(name) for name in ("Head", "Body", "Left Hand")]
+        self.assertEqual(positions, sorted(positions))
+
+    def test_ce_03_an_empty_slot_shows_its_name_and_nothing_else(self):
+        """CE-03"""
+        out = self.call(CmdEquipment(), "", caller=self._wearer())
+        line = next(ln for ln in out.splitlines() if "Head" in ln)
+        self.assertEqual(line.strip(), "<Head>")
+
+    def test_ce_04_a_worn_item_is_named_beside_its_slot(self):
+        """CE-04"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._worn(wearer, Helmet, "an iron helmet")
+        out = self.call(CmdEquipment(), "", caller=wearer)
+        line = next(ln for ln in out.splitlines() if "Head" in ln)
+        self.assertIn("an iron helmet", line)
+
+    def test_ce_05_the_item_is_named_through_get_display_name(self):
+        """CE-05"""
+        from tests.game_typeclasses import ShroudedHelmet
+
+        wearer = self._wearer()
+        self._worn(wearer, ShroudedHelmet, "an iron helmet")
+        out = self.call(CmdEquipment(), "", caller=wearer)
+        # The seam is Evennia's, not ours: a game with darkness overrides
+        # get_display_name and this listing follows without a hook here.
+        self.assertIn("something", out)
+        self.assertNotIn("an iron helmet", out)
+
+    def test_ce_06_a_multi_slot_item_appears_under_every_slot(self):
+        """CE-06"""
+        from tests.game_typeclasses import Greatsword
+
+        wearer = self._wearer()
+        self._worn(wearer, Greatsword, "a greatsword")
+        out = self.call(CmdEquipment(), "", caller=wearer)
+        # worn_items genuinely holds it twice; showing it once would leave a
+        # hand looking free.
+        self.assertEqual(out.count("a greatsword"), 2)
+
+    def test_ce_07_slot_names_are_title_cased_without_underscores(self):
+        """CE-07"""
+        out = self.call(CmdEquipment(), "", caller=self._wearer())
+        self.assertIn("<Left Hand>", out)
+        self.assertNotIn("LEFT_HAND", out)
+
+    def test_ce_08_item_names_align_to_the_longest_slot_name(self):
+        """CE-08"""
+        from tests.game_typeclasses import Helmet, Ring
+
+        wearer = self._wearer()
+        self._worn(wearer, Helmet, "an iron helmet")
+        self._worn(wearer, Ring, "an iron ring")
+        out = self.call(CmdEquipment(), "", caller=wearer)
+        head = next(ln for ln in out.splitlines() if "Head" in ln)
+        hand = next(ln for ln in out.splitlines() if "Left Hand" in ln)
+        # "Right Hand" is the longest, so both names start past it.
+        self.assertEqual(head.index("an iron"), hand.index("an iron"))

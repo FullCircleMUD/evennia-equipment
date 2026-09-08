@@ -42,6 +42,7 @@ Behaviour is agreed here first, before any test or code — see
 | `SM` | `contrib.utils.match_slot()` — turning what a player typed into a slot name |
 | `CW` | `contrib.commands.CmdWear` — the command a player types |
 | `CM` | `contrib.commands.CmdRemove` — the command a player types to take something off |
+| `CE` | `contrib.commands.CmdEquipment` — the slot sheet a player reads |
 
 ## Fixtures
 
@@ -77,6 +78,7 @@ rather than faking one. It imports Evennia, so tests import it inside a test bod
 | `Humanoid` | A wearer with the humanoid body plan |
 | `Dog` | A wearer with a different body plan, so `body_slots` is proved to be read |
 | `Chimera` | Two slots where one name contains the other, so exact-match-wins is provable |
+| `ShroudedHelmet` | Overrides Evennia's `get_display_name()`, as a game with darkness would |
 | `UnwearableHumanoid` | Refuses everything at `at_pre_wear()`, as a class or alignment rule would |
 | `WatchfulHumanoid` | Records every post hook with its slots and what was worn at that moment |
 | `UnwearableWatcher` | A `WatchfulHumanoid` refusing at `at_pre_wear()`, so a silent refusal is provable |
@@ -1176,6 +1178,60 @@ the caller's own output has to be captured separately and the phrase counted.
 
 `CM-09` pins the split with an item whose name contains ` from `. The same rule as `CW-08`, and the
 same consequence: a wearable's name should hold neither ` on ` nor ` from ` as a spaced word.
+
+### CE — the equipment command
+
+```
+equipment
+eq
+```
+
+Every slot the wearer has, in the order its body plan declares them, with what is in it:
+
+```
+Equipped Items
+
+  <Head>        an iron helmet
+  <Body>
+  <Left Hand>   a greatsword
+  <Right Hand>  a greatsword
+```
+
+**Items are named through `get_display_name(caller)`.** That is Evennia's own viewer-aware hook, so a
+game whose items read differently in the dark gets it here without this library providing a seam — and
+gets it in `look` and everywhere else at the same time. A hook of ours would be a second, worse
+version of it.
+
+**The column is computed, not fixed.** Width comes from the longest slot name this wearer has, so a
+body plan with `LEFT_SHOULDER_PAULDRON` still aligns. The gap after it is a class attribute, so a game
+can widen it by subclassing rather than by reimplementing.
+
+**An empty slot shows its name and nothing else.** Not "empty", not "nothing" — the absence is the
+information, and a word for it would be noise on every line a player has not filled.
+
+| ID | Case | Test function |
+|---|---|---|
+| CE-01 | Every slot the wearer has is listed | test_ce_01_every_slot_is_listed |
+| CE-02 | Slots appear in the order the body plan declares them | test_ce_02_slots_appear_in_declaration_order |
+| CE-03 | An empty slot shows its name and nothing else | test_ce_03_an_empty_slot_shows_its_name_and_nothing_else |
+| CE-04 | A worn item is named beside its slot | test_ce_04_a_worn_item_is_named_beside_its_slot |
+| CE-05 | The item is named through `get_display_name()` | test_ce_05_the_item_is_named_through_get_display_name |
+| CE-06 | A multi-slot item appears under every slot it fills | test_ce_06_a_multi_slot_item_appears_under_every_slot |
+| CE-07 | Slot names are title-cased with underscores as spaces | test_ce_07_slot_names_are_title_cased_without_underscores |
+| CE-08 | Item names align to the longest slot name | test_ce_08_item_names_align_to_the_longest_slot_name |
+
+`CE-02` matters because `worn_items` is rebuilt in `body_slots` order by `at_init()`, and a sheet that
+reordered them would make a familiar list unreadable after a slot was added.
+
+`CE-05` is the case that proves the seam is Evennia's rather than ours. It uses a fixture overriding
+`get_display_name()`, which is what a game with darkness or blindness does.
+
+`CE-06` records the repetition rather than hiding it. A greatsword under both hands reads oddly, but
+`worn_items` genuinely holds it twice, and a sheet that showed it once would leave a hand looking free.
+Collapsing it is a judgement about wording, which is the consumer's.
+
+`CE-08` is what makes it a column rather than a list. It fails on any implementation using a fixed
+width smaller than the longest name.
 
 ## Open decisions
 

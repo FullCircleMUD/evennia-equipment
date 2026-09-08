@@ -301,3 +301,11 @@ class _RefusingHooks:
 class RefusingCarrier(EquipmentCarryingMixin, _RefusingHooks, DefaultObject):
     """A carrier whose chain refuses everything, so the library must not
     overrule it. PR-03."""
+
+
+class ShroudedHelmet(Helmet):
+    """A helmet nobody can make out, by overriding Evennia's own viewer-aware
+    hook. Stands in for a game with darkness or blindness. CE-05."""
+
+    def get_display_name(self, looker=None, **kwargs):
+        return "something"

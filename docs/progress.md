@@ -2,6 +2,24 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-08 — the equipment command
+
+`CmdEquipment`, the third of contrib's four. 255 tests.
+
+- **`get_display_name(caller)` names every item**, which is Evennia's own viewer-aware hook. A game
+  with darkness overrides that once and this listing follows — so the library ships no display seam of
+  its own, here or in `inventory`. Case `CE-05`.
+- **The column width is computed** from the longest slot name the wearer has, so an unusual body plan
+  still aligns. `slot_column_gap` is a class attribute, overridable by subclassing and not a module
+  constant that would belong in core's `config.py`. Case `CE-08`.
+- **An empty slot shows its name and nothing else.** Case `CE-03`.
+- **A multi-slot item appears under every slot it fills**, because `worn_items` holds it twice and
+  showing it once would leave a hand looking free. Case `CE-06`.
+
+The `ShroudedHelmet` fixture landed above `Helmet` in `game_typeclasses.py` and took the whole suite
+down with a `NameError` — 228 errors from one misplaced class. The file has grown enough that an
+anchor chosen from an earlier reading is no longer where it was.
+
 ## 2026-09-08 — the remove command
 
 `CmdRemove`, the second of contrib's four. 247 tests.

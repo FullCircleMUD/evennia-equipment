@@ -488,6 +488,40 @@ ring* and *a bone helm* are safe.
 The room broadcast excludes the caller. Without that they receive the mixin's message and the rendered
 broadcast, which read identically — "You wear iron helmet." twice.
 
+### Reading a slot sheet
+
+`CmdEquipment` lists every slot the wearer has, in `body_slots` order, with what is in it:
+
+```
+Equipped Items
+
+  <Head>        an iron helmet
+  <Body>
+  <Left Hand>   a greatsword
+  <Right Hand>  a greatsword
+```
+
+**The item is named through `get_display_name(caller)`**, which is Evennia's own viewer-aware hook. A
+game whose items read differently in the dark overrides that once and gets it here, in `look`, and
+everywhere else. A seam of ours would be a second and worse version of the same thing — so this
+library provides none, and that is the answer for `inventory` too.
+
+The boundary is worth knowing: per-item naming is covered, whole-listing behaviour is not. A game that
+renders *every* line as "Something" when the looker is blind is making a decision about the listing,
+which no per-item hook can express, and overrides the command.
+
+**The column width is computed** from the longest slot name this wearer has, so a body plan naming a
+`LEFT_SHOULDER_PAULDRON` still aligns. The gap after it is `slot_column_gap`, a class attribute rather
+than a module constant — a game widens it by subclassing, and nothing in contrib declares a constant
+that would belong in core's `config.py`.
+
+**An empty slot shows its name and nothing else.** The absence is the information, and a word for it
+would be noise on every line a player has not filled.
+
+**A multi-slot item appears under every slot it fills.** A greatsword beside both hands reads oddly,
+but `worn_items` genuinely holds it twice and showing it once would leave a hand looking free.
+Collapsing it is a judgement about wording, which belongs to whoever replaces the command.
+
 **The mixin resolves the name, so the command does not.** `wear()` and `remove()` each take a string
 or an object, and a string is matched against what the wearer holds with `f_key_matches` — the same
 filter path as everything else the library walks.

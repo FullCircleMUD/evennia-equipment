@@ -111,3 +111,50 @@ class CmdRemove(Command):
             from_obj=caller,
             exclude=[caller],
         )
+
+
+class CmdEquipment(Command):
+    """
+    See what you are wearing.
+
+    Usage:
+        equipment
+        eq
+
+    Lists every slot your body has, in order, and what is in it. An empty slot
+    shows its name and nothing else.
+    """
+
+    key = "equipment"
+    aliases = ["eq"]
+    locks = "cmd:all()"
+    help_category = "Items"
+
+    # Spaces between the slot column and the item name. A class attribute
+    # rather than a module constant, so a game widens it by subclassing.
+    slot_column_gap = 2
+
+    def func(self):
+        caller = self.caller
+        slots = caller.worn_items or {}
+
+        names = {slot: slot.replace("_", " ").title() for slot in slots}
+        # Computed rather than fixed, so a body plan naming a
+        # LEFT_SHOULDER_PAULDRON still lines up. The brackets are part of the
+        # column, hence the two.
+        width = max((len(name) for name in names.values()), default=0) + 2
+
+        lines = ["|wEquipped Items|n", ""]
+        for slot, item in slots.items():
+            bracket = f"<|c{names[slot]}|n>"
+            if item is None:
+                # The absence is the information. A word for it would be noise
+                # on every line a player has not filled.
+                lines.append(f"  {bracket}")
+                continue
+            # Evennia's own viewer-aware hook, so a game with darkness gets
+            # this listing right without a seam of ours.
+            pad = " " * (width - len(names[slot]) - 2 + self.slot_column_gap)
+            lines.append(f"  {bracket}{pad}|w{item.get_display_name(caller)}|n")
+
+        caller.msg("\n".join(lines))
