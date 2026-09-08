@@ -2,6 +2,27 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-08 — the wear command
+
+`CmdWear`, the first of contrib's four. 238 tests.
+
+- **It decides nothing.** Parse, match the slot, call `wear()`, speak what it returns, broadcast. Every
+  refusal reaches the player verbatim from the mixin or the matcher, so one wording serves however a
+  player got there. Case `CW-03`.
+- **The slot is matched before `wear()` is called**, so a mistyped slot never puts the item on somewhere
+  else first. Case `CW-05`.
+- **`rpartition`, not `partition`.** An item may contain the word — *a ring on a chain* — and splitting
+  on the first would take the chain for a slot. Case `CW-08`.
+
+`EvenniaCommandTest` boots against `tests/test_settings.py` with no gamedir, and `self.call(cmd, args,
+caller=...)` takes our own wearer, so its `char1` is ignored and the existing fixtures do the work. A
+throwaway probe against a stock Evennia command settled that before any case was written.
+
+`CW-07` was vacuous as first written and is the reason to mutation-check a messaging case.
+`self.call(..., receiver=)` returns only the receiver's output, so the assertion could see the room
+being told and not the wearer being told twice — removing `exclude=[caller]` left the suite green. It
+now makes a second call capturing the caller's own output and counts the phrase.
+
 ## 2026-09-08 — contrib begins, with the slot helpers
 
 `contrib/` exists, holding the two helpers the commands need before any command is written. 230 tests.

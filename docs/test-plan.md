@@ -40,6 +40,7 @@ Behaviour is agreed here first, before any test or code — see
 | `TG` | The filters this library publishes for `evennia-targeting` |
 | `NS` | `contrib.utils.normalise_slot()` — one form to compare typed text and slot names in |
 | `SM` | `contrib.utils.match_slot()` — turning what a player typed into a slot name |
+| `CW` | `contrib.commands.CmdWear` — the command a player types |
 
 ## Fixtures
 
@@ -1089,6 +1090,48 @@ fails if the matcher reaches for `valid_slot_names()`.
 
 `SM-08` guards the empty string reaching here from `wear ring on `. Matched as a substring it would hit
 every slot; the answer is a refusal, not a list of everything the wearer has.
+
+### CW — the wear command
+
+```
+wear <item>
+wear <item> on <slot>
+```
+
+The command parses, speaks and broadcasts. Everything else is already answered: `match_slot()` turns
+the slot text into a name, and `wear()` resolves the item, chooses the slots and returns the message.
+
+**It says almost nothing of its own.** The refusals a player sees come from the mixin or the matcher
+verbatim, so there is one wording for "you are already wearing that" rather than one per command.
+
+**The argument splits on the last ` on `.** An item may contain the word — *a ring on a chain* — and
+splitting on the first would take the chain for a slot. Splitting on the last is right whenever a slot
+was named at all, and is the case the syntax exists for.
+
+| ID | Case | Test function |
+|---|---|---|
+| CW-01 | No argument asks what to wear | test_cw_01_no_argument_asks_what_to_wear |
+| CW-02 | An item name wears it and tells the player | test_cw_02_an_item_name_wears_it |
+| CW-03 | A refusal from the mixin reaches the player unchanged | test_cw_03_a_refusal_reaches_the_player_unchanged |
+| CW-04 | `on <slot>` wears it in that slot | test_cw_04_on_a_slot_wears_it_there |
+| CW-05 | A slot matching nothing is refused, and nothing is worn | test_cw_05_a_slot_matching_nothing_wears_nothing |
+| CW-06 | `on` with nothing after it is refused | test_cw_06_on_with_nothing_after_it_is_refused |
+| CW-07 | The room is told, and the wearer is not told twice | test_cw_07_the_room_is_told_and_the_wearer_is_not_told_twice |
+| CW-08 | Only the last ` on ` splits the argument | test_cw_08_only_the_last_on_splits_the_argument |
+
+`CW-05` is ordered deliberately: the slot is matched **before** `wear()` is called, so a mistyped slot
+never puts the item on somewhere else. Matching after would wear it first and then complain.
+
+`CW-07` is what makes it a MUD command rather than a function call. The wearer gets the mixin's
+message; everyone else in the room sees the action, and the wearer must not receive both.
+
+`CW-08` pins the split rule with an item whose own name contains ` on `. It is the case that fails on
+`partition()` and passes on `rpartition()`.
+
+**Known limitation, deliberately uncovered.** `wear ring on a chain` — where the whole thing is the
+item's name and no slot was meant — reads the chain as a slot and refuses. Nothing in the string says
+which was intended. A player types `wear ring on a chain on left finger`, or names the item less
+ambiguously.
 
 ## Open decisions
 

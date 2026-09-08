@@ -22,6 +22,9 @@ from evennia_equipment.config import (
     valid_slot_names,
 )
 from evennia_equipment.log import equipment_log
+from evennia.utils.test_resources import EvenniaCommandTest
+
+from evennia_equipment.contrib.commands import CmdWear
 from evennia_equipment.contrib.utils import match_slot, normalise_slot
 from evennia_equipment.targeting import f_identity_in, f_worn_by
 from evennia_targeting.testing import validate_factory
@@ -2445,3 +2448,109 @@ class SlotMatchingTests(DjangoTestCase):
         matched, refusal = match_slot(self._wearer(), "")
         self.assertIsNone(matched)
         self.assertTrue(refusal)
+
+
+class WearCommandTests(EvenniaCommandTest):
+    """CW — the command a player types to put something on."""
+
+    def _wearer(self):
+        """Create a wearer in a room, so a broadcast has somewhere to go."""
+        from evennia import create_object
+        from tests.game_typeclasses import Humanoid
+
+        return create_object(Humanoid, key="wearer", location=self.room1)
+
+    def _held(self, wearer, typeclass, key):
+        """Create an item in the wearer's contents, unworn."""
+        from evennia import create_object
+
+        return create_object(typeclass, key=key, location=wearer)
+
+    def test_cw_01_no_argument_asks_what_to_wear(self):
+        """CW-01"""
+        out = self.call(CmdWear(), "", caller=self._wearer())
+        self.assertIn("what", out.lower())
+
+    def test_cw_02_an_item_name_wears_it(self):
+        """CW-02"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, Helmet, "iron helmet")
+        out = self.call(CmdWear(), "iron helmet", caller=wearer)
+        self.assertIs(wearer.worn_items["HEAD"], helmet)
+        self.assertIn("iron helmet", out)
+
+    def test_cw_03_a_refusal_reaches_the_player_unchanged(self):
+        """CW-03"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._held(wearer, Helmet, "iron helmet")
+        self.call(CmdWear(), "iron helmet", caller=wearer)
+        out = self.call(CmdWear(), "iron helmet", caller=wearer)
+        # The mixin's wording, not a second one written here.
+        self.assertIn("already wearing", out.lower())
+
+    def test_cw_04_on_a_slot_wears_it_there(self):
+        """CW-04"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        ring = self._held(wearer, Ring, "iron ring")
+        self.call(CmdWear(), "iron ring on right hand", caller=wearer)
+        self.assertIs(wearer.worn_items["RIGHT_HAND"], ring)
+        self.assertIsNone(wearer.worn_items["LEFT_HAND"])
+
+    def test_cw_05_a_slot_matching_nothing_wears_nothing(self):
+        """CW-05"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._held(wearer, Helmet, "iron helmet")
+        out = self.call(CmdWear(), "iron helmet on foot", caller=wearer)
+        self.assertIn("foot", out)
+        # Matched before wear() is called, so a mistyped slot never puts the
+        # item on somewhere else first.
+        self.assertEqual(wearer.get_all_worn(), [])
+
+    def test_cw_06_on_with_nothing_after_it_is_refused(self):
+        """CW-06"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._held(wearer, Helmet, "iron helmet")
+        out = self.call(CmdWear(), "iron helmet on ", caller=wearer)
+        self.assertIn("slot", out.lower())
+        self.assertEqual(wearer.get_all_worn(), [])
+
+    def test_cw_07_the_room_is_told_and_the_wearer_is_not_told_twice(self):
+        """CW-07"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._held(wearer, Helmet, "iron helmet")
+        self.char1.location = self.room1
+        seen = self.call(
+            CmdWear(), "iron helmet", caller=wearer, receiver=self.char1
+        )
+        self.assertIn("iron helmet", seen)
+        self.assertIn("wearer", seen.lower())
+
+        # And the second half, which needs the caller's own output. Without
+        # exclude=[caller] the broadcast renders for them as "You wear ..."
+        # too, so they are told the same thing twice.
+        other = self._wearer()
+        self._held(other, Helmet, "iron helmet")
+        told = self.call(CmdWear(), "iron helmet", caller=other)
+        self.assertEqual(told.lower().count("you wear"), 1)
+
+    def test_cw_08_only_the_last_on_splits_the_argument(self):
+        """CW-08"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        ring = self._held(wearer, Ring, "a ring on a chain")
+        # partition() would take "a chain" for the slot and refuse.
+        self.call(CmdWear(), "ring on a chain on right hand", caller=wearer)
+        self.assertIs(wearer.worn_items["RIGHT_HAND"], ring)

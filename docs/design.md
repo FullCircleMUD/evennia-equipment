@@ -444,6 +444,34 @@ Ambiguous slots are listed where ambiguous **items** are not. A name match could
 list would be noise; a wearer has ten slots in total and a substring rarely hits more than two, so
 naming them tells the player exactly which words work.
 
+### What a command actually does
+
+`CmdWear` is about twenty lines, and none of them decide anything:
+
+```
+wear <item>
+wear <item> on <slot>
+```
+
+1. Refuse an empty argument.
+2. Split on the **last** ` on `.
+3. If a slot was named, match it — **before** `wear()` is called, so a mistyped slot never puts the
+   item on somewhere else first.
+4. Call `wear()`, and say what it returns.
+5. On success, tell the rest of the room.
+
+Every refusal a player sees comes from the mixin or the matcher **verbatim**, so "you are already
+wearing that" has one wording however a player reached it.
+
+The split is `rpartition`, not `partition`: an item may contain the word — *a ring on a chain* — and
+splitting on the first would take the chain for a slot. The cost is that `wear ring on a chain`, with
+no slot meant, reads the chain as one and refuses. Nothing in the string says which was intended, so
+the rule is not to put ` on ` or ` from ` in a wearable's name — the letters are fine, it is the spaced
+word that splits, so *an onyx ring* and *a bone helm* are safe.
+
+The room broadcast excludes the caller. Without that they receive the mixin's message and the rendered
+broadcast, which read identically — "You wear iron helmet." twice.
+
 **The mixin resolves the name, so the command does not.** `wear()` and `remove()` each take a string
 or an object, and a string is matched against what the wearer holds with `f_key_matches` — the same
 filter path as everything else the library walks.
