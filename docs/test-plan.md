@@ -41,6 +41,7 @@ Behaviour is agreed here first, before any test or code — see
 | `NS` | `contrib.utils.normalise_slot()` — one form to compare typed text and slot names in |
 | `SM` | `contrib.utils.match_slot()` — turning what a player typed into a slot name |
 | `CW` | `contrib.commands.CmdWear` — the command a player types |
+| `CM` | `contrib.commands.CmdRemove` — the command a player types to take something off |
 
 ## Fixtures
 
@@ -1132,6 +1133,49 @@ message; everyone else in the room sees the action, and the wearer must not rece
 item's name and no slot was meant — reads the chain as a slot and refuses. Nothing in the string says
 which was intended. A player types `wear ring on a chain on left finger`, or names the item less
 ambiguously.
+
+### CM — the remove command
+
+```
+remove <item>
+remove <item> from <slot>
+remove from <slot>
+```
+
+The mirror of `CmdWear`, with one form it has no counterpart to: **naming only a slot.** Wearing
+nothing into a slot means nothing, but taking off whatever is on the right finger is a complete
+instruction, and `remove()` already accepts it.
+
+The parse has to reach that third form. `remove from right finger` leaves ` from right finger` as the
+argument, and a split on ` from ` never sees a leading separator — so an argument that *starts* with
+`from ` is a slot with no item, and only what remains goes through the usual split on the last
+` from `.
+
+| ID | Case | Test function |
+|---|---|---|
+| CM-01 | No argument asks what to remove | test_cm_01_no_argument_asks_what_to_remove |
+| CM-02 | An item name removes it and tells the player | test_cm_02_an_item_name_removes_it |
+| CM-03 | A refusal from the mixin reaches the player unchanged | test_cm_03_a_refusal_reaches_the_player_unchanged |
+| CM-04 | An item and a slot together remove that item from that slot | test_cm_04_an_item_and_a_slot_remove_from_that_slot |
+| CM-05 | A slot alone removes whatever is in it | test_cm_05_a_slot_alone_removes_what_is_in_it |
+| CM-06 | A slot matching nothing is refused, and nothing comes off | test_cm_06_a_slot_matching_nothing_removes_nothing |
+| CM-07 | `from` with nothing after it is refused | test_cm_07_from_with_nothing_after_it_is_refused |
+| CM-08 | The room is told, and the wearer is not told twice | test_cm_08_the_room_is_told_and_the_wearer_is_not_told_twice |
+| CM-09 | Only the last ` from ` splits the argument | test_cm_09_only_the_last_from_splits_the_argument |
+
+`CM-05` is the form the whole slot argument was added for. Two rings with the same key, one on each
+hand, and `remove ring` takes whichever came first — `remove from right hand` is how a player says
+which.
+
+`CM-06` is ordered like `CW-05`: the slot is matched **before** `remove()` is called, so a mistyped
+slot never strips something else first.
+
+`CM-08` asserts both halves, which `CW-07` did not until it was mutation-checked. `self.call(...,
+receiver=)` returns only the receiver's output, so the wearer being told twice is invisible to it —
+the caller's own output has to be captured separately and the phrase counted.
+
+`CM-09` pins the split with an item whose name contains ` from `. The same rule as `CW-08`, and the
+same consequence: a wearable's name should hold neither ` on ` nor ` from ` as a spaced word.
 
 ## Open decisions
 

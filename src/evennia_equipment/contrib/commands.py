@@ -11,7 +11,7 @@ same however a player reached it.
 # of why it is separate from core.
 from evennia import Command
 
-from evennia_equipment.contrib.utils import match_slot
+from evennia_equipment.contrib.utils import match_slot, split_argument
 
 
 class CmdWear(Command):
@@ -38,14 +38,10 @@ class CmdWear(Command):
             caller.msg("Wear what?")
             return
 
-        # rpartition, not partition: an item may contain the word — "a ring on
-        # a chain" — and splitting on the first would take the chain for a slot.
-        item_text, separator, slot_text = self.args.rpartition(" on ")
-        if not separator:
-            item_text, slot_text = self.args, ""
+        item_text, slot_text, named = split_argument(self.args, "on")
 
         slot = None
-        if separator:
+        if named:
             # Matched before wear() is called, so a mistyped slot never puts
             # the item on somewhere else first.
             slot, refusal = match_slot(caller, slot_text)
@@ -53,13 +49,65 @@ class CmdWear(Command):
                 caller.msg(refusal)
                 return
 
-        worn, message = caller.wear(item_text.strip(), slot=slot)
+        worn, message = caller.wear(item_text, slot=slot)
         caller.msg(message)
         if not worn:
             return
 
         caller.location.msg_contents(
-            f"$You() $conj(wear) {item_text.strip()}.",
+            f"$You() $conj(wear) {item_text}.",
+            from_obj=caller,
+            exclude=[caller],
+        )
+
+
+class CmdRemove(Command):
+    """
+    Take something off.
+
+    Usage:
+        remove <item>
+        remove <item> from <slot>
+        remove from <slot>
+
+    Naming a slot is how you say which of two identical items you mean — the
+    ring on your right hand rather than the one on your left. Type `equipment`
+    to see the slots you have.
+    """
+
+    key = "remove"
+    locks = "cmd:all()"
+    help_category = "Items"
+
+    def func(self):
+        caller = self.caller
+        args = self.args.strip()
+
+        if not args:
+            caller.msg("Remove what?")
+            return
+
+        # A leading "from" is the third form — a slot with no item — and the
+        # padding in split_argument() is what makes it an ordinary split
+        # rather than a case of its own.
+        item_text, slot_text, named = split_argument(args, "from")
+
+        slot = None
+        if named:
+            # Matched before remove() is called, so a mistyped slot never
+            # strips something else first.
+            slot, refusal = match_slot(caller, slot_text)
+            if refusal:
+                caller.msg(refusal)
+                return
+
+        removed, message = caller.remove(item_text or None, slot=slot)
+        caller.msg(message)
+        if not removed:
+            return
+
+        caller.location.msg_contents(
+            f"$You() $conj(remove) {item_text or slot_text}.",
             from_obj=caller,
             exclude=[caller],
         )

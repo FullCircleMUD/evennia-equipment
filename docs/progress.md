@@ -2,6 +2,26 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-08 — the remove command
+
+`CmdRemove`, the second of contrib's four. 247 tests.
+
+- **Three forms**, one more than wearing: `remove <item>`, `remove <item> from <slot>`, and
+  `remove from <slot>`. The last is what the slot argument was added for — two rings with one key, one
+  on each hand, and this is how a player says which. Case `CM-05`.
+- **`split_argument(text, keyword)`** now does the parsing for both commands. It pads the string before
+  splitting on the last occurrence, which turns both edges into ordinary splits: a leading keyword
+  needs no branch, and a trailing one gives an empty slot rather than being swallowed into the item
+  name.
+
+`CM-07` caught a real defect. `remove iron helmet from ` reaches the command as `iron helmet from` —
+Evennia's parser drops the trailing space — so a split needing a space each side saw no keyword and
+read the whole thing as an item name.
+
+`CmdWear` had the same flaw, unfound. `CW-06` passed only because that command had not called
+`.strip()` before splitting, which is one edit away from failing the same way. The padding fixes both,
+and the `startswith("from ")` branch written for the item-less form is gone with it.
+
 ## 2026-09-08 — the wear command
 
 `CmdWear`, the first of contrib's four. 238 tests.

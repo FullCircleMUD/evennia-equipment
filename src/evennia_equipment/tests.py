@@ -24,7 +24,7 @@ from evennia_equipment.config import (
 from evennia_equipment.log import equipment_log
 from evennia.utils.test_resources import EvenniaCommandTest
 
-from evennia_equipment.contrib.commands import CmdWear
+from evennia_equipment.contrib.commands import CmdRemove, CmdWear
 from evennia_equipment.contrib.utils import match_slot, normalise_slot
 from evennia_equipment.targeting import f_identity_in, f_worn_by
 from evennia_targeting.testing import validate_factory
@@ -2554,3 +2554,121 @@ class WearCommandTests(EvenniaCommandTest):
         # partition() would take "a chain" for the slot and refuse.
         self.call(CmdWear(), "ring on a chain on right hand", caller=wearer)
         self.assertIs(wearer.worn_items["RIGHT_HAND"], ring)
+
+
+class RemoveCommandTests(EvenniaCommandTest):
+    """CM — the command a player types to take something off."""
+
+    def _wearer(self):
+        """Create a wearer in a room, so a broadcast has somewhere to go."""
+        from evennia import create_object
+        from tests.game_typeclasses import Humanoid
+
+        return create_object(Humanoid, key="wearer", location=self.room1)
+
+    def _worn(self, wearer, typeclass, key):
+        """Create an item in the wearer's contents and put it on."""
+        from evennia import create_object
+
+        item = create_object(typeclass, key=key, location=wearer)
+        wearer.wear(item)
+        return item
+
+    def test_cm_01_no_argument_asks_what_to_remove(self):
+        """CM-01"""
+        out = self.call(CmdRemove(), "", caller=self._wearer())
+        self.assertIn("what", out.lower())
+
+    def test_cm_02_an_item_name_removes_it(self):
+        """CM-02"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._worn(wearer, Helmet, "iron helmet")
+        out = self.call(CmdRemove(), "iron helmet", caller=wearer)
+        self.assertIsNone(wearer.worn_items["HEAD"])
+        self.assertIn("iron helmet", out)
+
+    def test_cm_03_a_refusal_reaches_the_player_unchanged(self):
+        """CM-03"""
+        from evennia import create_object
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        create_object(Helmet, key="iron helmet", location=wearer)
+        out = self.call(CmdRemove(), "iron helmet", caller=wearer)
+        # The mixin's wording for carried-but-not-worn, not a second one here.
+        self.assertIn("not wearing", out.lower())
+
+    def test_cm_04_an_item_and_a_slot_remove_from_that_slot(self):
+        """CM-04"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        left = self._worn(wearer, Ring, "iron ring")
+        right = self._worn(wearer, Ring, "iron ring")
+        self.call(CmdRemove(), "iron ring from right hand", caller=wearer)
+        self.assertFalse(wearer.is_worn(right))
+        self.assertIs(wearer.worn_items["LEFT_HAND"], left)
+
+    def test_cm_05_a_slot_alone_removes_what_is_in_it(self):
+        """CM-05"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        left = self._worn(wearer, Ring, "iron ring")
+        right = self._worn(wearer, Ring, "iron ring")
+        # The form the slot argument exists for: two rings, one key, and this
+        # is how a player says which hand.
+        self.call(CmdRemove(), "from right hand", caller=wearer)
+        self.assertFalse(wearer.is_worn(right))
+        self.assertIs(wearer.worn_items["LEFT_HAND"], left)
+
+    def test_cm_06_a_slot_matching_nothing_removes_nothing(self):
+        """CM-06"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._worn(wearer, Helmet, "iron helmet")
+        out = self.call(CmdRemove(), "iron helmet from foot", caller=wearer)
+        self.assertIn("foot", out)
+        self.assertIs(wearer.worn_items["HEAD"], helmet)
+
+    def test_cm_07_from_with_nothing_after_it_is_refused(self):
+        """CM-07"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._worn(wearer, Helmet, "iron helmet")
+        out = self.call(CmdRemove(), "iron helmet from ", caller=wearer)
+        self.assertIn("slot", out.lower())
+        self.assertIs(wearer.worn_items["HEAD"], helmet)
+
+    def test_cm_08_the_room_is_told_and_the_wearer_is_not_told_twice(self):
+        """CM-08"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._worn(wearer, Helmet, "iron helmet")
+        self.char1.location = self.room1
+        seen = self.call(
+            CmdRemove(), "iron helmet", caller=wearer, receiver=self.char1
+        )
+        self.assertIn("iron helmet", seen)
+        self.assertIn("wearer", seen.lower())
+
+        # The half receiver= cannot see: without exclude=[caller] the
+        # broadcast renders for them as "You remove ..." as well.
+        other = self._wearer()
+        self._worn(other, Helmet, "iron helmet")
+        told = self.call(CmdRemove(), "iron helmet", caller=other)
+        self.assertEqual(told.lower().count("you remove"), 1)
+
+    def test_cm_09_only_the_last_from_splits_the_argument(self):
+        """CM-09"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        ring = self._worn(wearer, Ring, "a ring from a king")
+        self.call(CmdRemove(), "ring from a king from left hand", caller=wearer)
+        self.assertFalse(wearer.is_worn(ring))

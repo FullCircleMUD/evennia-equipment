@@ -463,11 +463,27 @@ wear <item> on <slot>
 Every refusal a player sees comes from the mixin or the matcher **verbatim**, so "you are already
 wearing that" has one wording however a player reached it.
 
-The split is `rpartition`, not `partition`: an item may contain the word — *a ring on a chain* — and
-splitting on the first would take the chain for a slot. The cost is that `wear ring on a chain`, with
-no slot meant, reads the chain as one and refuses. Nothing in the string says which was intended, so
-the rule is not to put ` on ` or ` from ` in a wearable's name — the letters are fine, it is the spaced
-word that splits, so *an onyx ring* and *a bone helm* are safe.
+`CmdRemove` is the same shape, splitting on ` from ` and with one form wearing has no counterpart to:
+
+```
+remove <item>
+remove <item> from <slot>
+remove from <slot>
+```
+
+**Both split through `split_argument(text, keyword)`**, which pads the string before splitting on the
+**last** occurrence. Last, not first, because an item may contain the word — *a ring on a chain* — and
+splitting on the first would take the chain for a slot.
+
+The padding is what makes the edges ordinary. `remove from right hand` has no item and
+`remove helmet from` has no slot, and a split needing a space each side of the keyword would miss both
+— so the item-less form needs no branch of its own, and a trailing keyword resolves to an empty slot
+rather than being swallowed into the item's name.
+
+The cost of splitting at all is that `wear ring on a chain`, with no slot meant, reads the chain as one
+and refuses. Nothing in the string says which was intended, so the rule is not to put ` on ` or
+` from ` in a wearable's name — the letters are fine, it is the spaced word that splits, so *an onyx
+ring* and *a bone helm* are safe.
 
 The room broadcast excludes the caller. Without that they receive the mixin's message and the rendered
 broadcast, which read identically — "You wear iron helmet." twice.

@@ -29,6 +29,32 @@ def normalise_slot(text):
     return text.strip().upper().replace(" ", "").replace("_", "").replace("-", "")
 
 
+def split_argument(text, keyword):
+    """Split ``<item> <keyword> <slot>`` on the **last** occurrence of the word.
+
+    Last, not first, because an item may contain the word — *a ring on a chain*
+    — and splitting on the first would take the chain for a slot.
+
+    The text is padded before splitting, which is what makes the edge cases
+    ordinary. ``remove from right hand`` has no item and ``remove helmet from``
+    has no slot; both would otherwise miss a split that needs a space on each
+    side of the keyword.
+
+    Args:
+        text (str): The whole argument, as typed.
+        keyword (str): The word that separates them — ``"on"`` or ``"from"``.
+
+    Returns:
+        tuple: ``(item, slot, named)``. ``item`` and ``slot`` are stripped and
+        may be empty; ``named`` says whether the keyword was there at all,
+        which is how "no slot given" is told from "an empty slot given".
+    """
+    item, separator, slot = f" {text} ".rpartition(f" {keyword} ")
+    if not separator:
+        return (text.strip(), "", False)
+    return (item.strip(), slot.strip(), True)
+
+
 def match_slot(wearer, text):
     """Turn what a player typed into a slot name this wearer has.
 
