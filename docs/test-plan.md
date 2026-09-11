@@ -552,6 +552,9 @@ so it is already in inventory.
 | WS-17 | A subclass declaring no slots is refused at import | test_ws_17_a_subclass_declaring_no_slots_is_refused |
 | WS-18 | A subclass declaring a plain string instead of an enum member is refused | test_ws_18_a_plain_string_instead_of_an_enum_member_is_refused |
 | WS-19 | A subclass repeating a slot is refused | test_ws_19_a_repeated_slot_is_refused |
+| WS-20 | A reconciliation that dropped an occupied slot logs an INFO naming the wearer, the slot and the item that was in it | test_ws_20_a_dropped_occupied_slot_is_logged |
+| WS-21 | A reconciliation that only added slots logs an INFO naming the wearer and the added slots | test_ws_21_added_slots_are_logged |
+| WS-22 | A load with nothing to reconcile logs nothing | test_ws_22_a_load_with_nothing_to_reconcile_logs_nothing |
 
 Every import-time refusal names the class, the slot at fault and what to do about it. A consumer
 meeting one has written a typeclass, not called an API, so the message has to be readable where it
@@ -576,6 +579,11 @@ on.
 
 `WS-18` exists because the failure without it is obscure: `body_slots = ("HEAD",)` dies on `s.value`
 deep inside the mixin, naming neither the class nor the line that wrote it.
+
+`WS-20`–`WS-22` are INFO deliberately: a reconciliation is the game working as intended after a body
+plan changed, not a fault — the line exists so a player's "my ring stopped working" can be looked up.
+An item in a dropped slot stops being worn with no hook fired, and this line is the only witness.
+`WS-22` is the noise guard: a line per ordinary load would bury the ones that matter.
 
 ### WE — wearing
 

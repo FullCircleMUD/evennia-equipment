@@ -343,6 +343,50 @@ class WearslotsTests(DjangoTestCase):
             wearer.at_init()
         self.assertIs(wearer.worn_items["HEAD"], helmet)
 
+    def test_ws_20_a_dropped_occupied_slot_is_logged(self):
+        """WS-20"""
+        from evennia import create_object
+        from tests.game_typeclasses import Helmet, Humanoid
+        from tests.slot_enums import WearSlot
+
+        wearer = self._wearer()
+        helmet = create_object(Helmet, key="helmet", location=wearer, nohome=True)
+        wearer.wear(helmet)
+        with mock.patch.object(Humanoid, "body_slots", (WearSlot.BODY,)):
+            with mock.patch("evennia_equipment.wearslots.equipment_log") as logged:
+                wearer.at_init()
+        self.assertEqual(logged.call_count, 1)
+        message = logged.call_args.args[0]
+        self.assertIn(str(wearer), message)
+        self.assertIn("HEAD", message)
+        self.assertIn("helmet", message)
+        self.assertEqual(logged.call_args.kwargs.get("level", "INFO"), "INFO")
+
+    def test_ws_21_added_slots_are_logged(self):
+        """WS-21"""
+        from tests.game_typeclasses import Humanoid
+        from tests.slot_enums import WearSlot
+
+        wearer = self._wearer()
+        wearer.worn_items  # built, so the addition is a real reconciliation
+        with mock.patch.object(
+            Humanoid, "body_slots", Humanoid.body_slots + (WearSlot.DOG_NECK,)
+        ):
+            with mock.patch("evennia_equipment.wearslots.equipment_log") as logged:
+                wearer.at_init()
+        self.assertEqual(logged.call_count, 1)
+        message = logged.call_args.args[0]
+        self.assertIn(str(wearer), message)
+        self.assertIn("DOG_NECK", message)
+        self.assertEqual(logged.call_args.kwargs.get("level", "INFO"), "INFO")
+
+    def test_ws_22_a_load_with_nothing_to_reconcile_logs_nothing(self):
+        """WS-22"""
+        wearer = self._wearer()
+        with mock.patch("evennia_equipment.wearslots.equipment_log") as logged:
+            wearer.at_init()
+        logged.assert_not_called()
+
     def test_ws_17_a_subclass_declaring_no_slots_is_refused(self):
         """WS-17"""
         with self.assertRaises(AttributeError) as caught:

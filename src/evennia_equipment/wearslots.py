@@ -27,6 +27,7 @@ from evennia.typeclasses.attributes import AttributeProperty
 from evennia_targeting import f_key_matches, op_not, walk_contents
 
 from evennia_equipment.carrying import EquipmentCarryingMixin
+from evennia_equipment.log import equipment_log
 from evennia_equipment.targeting import f_identity_in, f_worn_by
 
 
@@ -139,9 +140,25 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
         #
         # An item in a dropped slot needs no moving. Wearing never took it out
         # of contents, so ceasing to be worn leaves it exactly where it is.
-        self.worn_items = {
-            name: self.worn_items.get(name) for name in declared
-        }
+        current = dict(self.worn_items)
+        self.worn_items = {name: current.get(name) for name in declared}
+
+        # INFO, not WARN: a body plan changing between loads is the game
+        # working as intended. But an item in a dropped slot stops being worn
+        # with no hook fired, so this line is the only witness when a player
+        # asks where their bonus went.
+        added = [name for name in declared if name not in current]
+        dropped = [
+            f"{name} ({current[name]})" if current[name] is not None else name
+            for name in current
+            if name not in declared
+        ]
+        parts = []
+        if added:
+            parts.append(f"added {', '.join(added)}")
+        if dropped:
+            parts.append(f"dropped {', '.join(dropped)}")
+        equipment_log(f"{self} slots reconciled: {'; '.join(parts)}.")
 
     def is_worn(self, item) -> bool:
         """Whether this item currently occupies any of this wearer's slots.
