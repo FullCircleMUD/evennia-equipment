@@ -2,6 +2,25 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-11 — three log lines where nothing else witnesses
+
+An inspection for unlogged failure paths found three, all on the archive-restore pipeline; everything
+else that goes wrong is already loud — boot refusals raise, validation raises at the assigning line,
+and command refusals reach the player. 282 tests.
+
+- **Slot reconciliation logs INFO** — only when a body plan changed between loads, naming slots added
+  and dropped and anything a dropped slot held. An item in a dropped slot stops being worn with no
+  hook fired, so this line is what answers "my ring stopped working". Cases `WS-20`–`WS-22`.
+- **A refused restore logs INFO** — the same refusal `restore_worn()` returns, made durable against a
+  caller that discards the list. Cases `RW-07`, `RW-08`.
+- **A worn item with no identity logs WARN at record time** — the one line at WARN, because a game
+  calling the recovery surface means gear to be restorable, so an identity-less worn item says the
+  identifying system is broken. The setting pointing at nothing skips every item, and this burst is
+  the only signal before a restore comes back empty. Cases `ER-08`, `ER-09`.
+
+The level rule the three settled: INFO is the game working as intended, recorded so a player's
+question can be looked up; WARN and ERROR are kept for something actually or potentially wrong.
+
 ## 2026-09-11 — logging through evennia-logging-extension
 
 `log.py` is now the standard three-line binding — `equipment_log = make_logger("equipment.log")` —
