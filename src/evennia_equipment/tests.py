@@ -63,7 +63,7 @@ class ScaffoldTests(TestCase):
         """SC-01"""
         self.assertTrue(evennia_equipment.__version__)
 
-    def test_sc_02_the_log_shim_is_a_no_op_outside_evennia(self):
+    def test_sc_02_the_log_shim_binds_and_a_call_returns_none(self):
         """SC-02"""
         self.assertIsNone(equipment_log("scaffold check"))
 

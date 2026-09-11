@@ -118,7 +118,7 @@ module — each of which otherwise looks like "no tests ran".
 | ID | Case | Test function |
 |---|---|---|
 | SC-01 | The package is importable and carries its version | test_sc_01_the_package_is_importable_and_versioned |
-| SC-02 | A log call outside an Evennia engine is a silent no-op rather than an error | test_sc_02_the_log_shim_is_a_no_op_outside_evennia |
+| SC-02 | The log shim binds and a call returns None without raising | test_sc_02_the_log_shim_binds_and_a_call_returns_none |
 
 ### CR — the carriable item
 

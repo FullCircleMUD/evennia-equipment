@@ -26,6 +26,9 @@ classifiers = [
 ]
 dependencies = [
     "evennia",
+    # Every line the library emits goes to its own equipment.log; the
+    # mechanism belongs to the extension, log.py only names the file.
+    "evennia-logging-extension",
     # Every walk over an object's contents goes through walk_contents, so one
     # definition of a filter serves every call site that needs it.
     "evennia-targeting",

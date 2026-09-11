@@ -159,7 +159,7 @@ evennia-equipment/
 │       ├── wearable.py        # EquipmentWearableMixin — an item's slot groups
 │       ├── wearslots.py       # EquipmentWearslotsMixin — slots, wear, remove
 │       ├── targeting.py       # the filters this library publishes for evennia-targeting
-│       ├── log.py             # shim onto Evennia's logger → equipment.log
+│       ├── log.py             # binds equipment_log via evennia-logging-extension → equipment.log
 │       ├── tests.py           # unit tests, run via runtests.py
 │       └── contrib/           # optional; core is complete without it
 │           ├── __init__.py    # the surface — the four commands and the cmdset
@@ -180,8 +180,9 @@ cases exercise the commands against real Evennia objects.
 ## Tools and environment
 
 - Python 3.10+ (pinned via `pyproject.toml`).
-- Runtime dependencies: Evennia and `evennia-targeting`. Neither is published, so a dev venv installs
-  the sibling from its checkout: `pip install -e ../evennia-targeting`.
+- Runtime dependencies: Evennia, `evennia-logging-extension` and `evennia-targeting`. None is
+  published, so a dev venv installs the siblings from their checkouts:
+  `pip install -e ../evennia-logging-extension -e ../evennia-targeting`.
 - **Tests use Django's test runner** via `python runtests.py`, which bootstraps Django then calls
   `evennia._init()`, as the siblings do. Not pytest, and no gamedir required.
 - Development uses a dedicated venv at `venv/` (gitignored), independent of any consumer game.

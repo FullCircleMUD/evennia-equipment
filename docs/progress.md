@@ -2,6 +2,24 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-11 — logging through evennia-logging-extension
+
+`log.py` is now the standard three-line binding — `equipment_log = make_logger("equipment.log")` —
+and the hand-rolled shim is gone. 275 tests.
+
+- **`evennia-logging-extension` is a hard dependency**, declared in `pyproject.toml` and installed as
+  an editable sibling checkout like targeting.
+- **The call surface is unchanged** — same name, same `(message, level, trace)` signature — so
+  `carrying.py` and the `PR-04` test needed nothing.
+- **`SC-02` reworded**: "outside an Evennia engine is a silent no-op" is the extension's contract now,
+  not this library's, so the case claims only that the shim binds and a call returns None without
+  raising.
+- **`interoperability.md` now covers every sibling including `fcm-*`**, per the standard; the preamble
+  excluding them is gone.
+
+Linter clean at zero errors, zero warnings; the `library-standards-auditor` passed the judgment layer
+the same day.
+
 ## 2026-09-08 — the command set, and contrib is complete
 
 `EquipmentCmdSet` bundles the four, and `docs/contrib.md` documents them. 275 tests.

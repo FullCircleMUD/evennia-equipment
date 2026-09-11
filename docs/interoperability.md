@@ -1,14 +1,13 @@
 # Interoperability
 
-This library against every `evennia-*` sibling library in `libraries/`. The `fcm-*` libraries are
-deliberately absent: they are coupled to FullCircleMUD's game concepts and are not offered for outside
-consumption, so a reader deciding what to co-install with this library cannot install them anyway.
+This library against every sibling library in `libraries/`, including itself.
 
 **What this library does, for a sibling deciding whether it matters.** It owns no tables, runs no
 migrations and issues no ORM writes of its own — all of its state is Evennia attributes on objects the
 consumer already has. It starts no scripts, dispatches nothing off the reactor thread, and does no
 network work. It reads two settings, `EQUIPMENT_WEARSLOTS` and `EQUIPMENT_IDENTITY_ATTRIBUTE`, both
-validated in `AppConfig.ready()`. It imports Evennia and `evennia-targeting`, and nothing else.
+validated in `AppConfig.ready()`. It imports Evennia, `evennia-logging-extension` and
+`evennia-targeting`, and nothing else.
 
 Each section names the relationship — **hard dependency**, **optional integration**, or **no
 coupling** — followed either by the constraints that apply or by an explicit clearance stating *why* it
@@ -38,6 +37,12 @@ learning that archiving exists. See [design.md](design.md) § *Recovering equipm
 `EQUIPMENT_IDENTITY_ATTRIBUTE` is the join. A world rebuild reissues every primary key, so the record
 is keyed on whatever the game already uses to identify an item permanently.
 
+## evennia-calendar
+
+**No coupling.** Neither library imports the other. Calendar turns Evennia's game time into a date,
+season and time of day, computed from `gametime` with nothing persisted; this library reads no game
+time and holds only equipment state on the objects it is mixed into.
+
 ## evennia-database-cascade
 
 **No coupling.** Neither library imports the other. Cascade routes a library's own tables to a database
@@ -57,6 +62,12 @@ This library.
 **No coupling.** Neither library imports the other. llm-service makes API calls and manages threading
 around them; this library dispatches nothing off the reactor thread and makes no network calls, so
 there is nothing of its to block or be blocked by.
+
+## evennia-logging-extension
+
+**Hard dependency** — one of the two siblings this library imports. `log.py` binds `equipment_log`
+through its `make_logger`, which writes with or without a reactor. It is not on PyPI, so it installs
+as an editable sibling checkout — see [installing.md](installing.md).
 
 ## evennia-message-bus
 
@@ -163,3 +174,15 @@ this one, and it is world-builder's call rather than ours.]`
 **No coupling.** Neither library imports the other. yaml-reader depends only on `pyyaml`, has no
 Evennia dependency and touches no database, so nothing it does is visible to this library and nothing
 this library does is visible to it.
+
+## fcm-telemetry-spawn
+
+**No coupling.** Neither library imports the other. It owns no models today and is parked pending
+`fcm-xrpl`'s shape; this library takes no part in spawning and emits nothing it could record.
+
+## fcm-xrpl
+
+**No coupling.** Neither library imports the other. fcm-xrpl owns FCM's on-chain ownership records;
+this library identifies items only through whatever attribute `EQUIPMENT_IDENTITY_ATTRIBUTE` names.
+An FCM game pointing that at a token id is the consumer wiring the two together — neither library
+knows the other exists.

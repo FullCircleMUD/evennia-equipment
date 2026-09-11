@@ -5,10 +5,11 @@ list; the reasoning for each step is below it or in [design.md](design.md).
 
 ## 1. Install the package
 
-Nothing is published yet, so install from a checkout — and `evennia-targeting` is a dependency that is
-not published either, so it comes from a checkout too:
+Nothing is published yet, so install from a checkout — and `evennia-logging-extension` and
+`evennia-targeting` are dependencies that are not published either, so they come from checkouts too:
 
 ```
+pip install -e /path/to/evennia-logging-extension
 pip install -e /path/to/evennia-targeting
 pip install -e /path/to/evennia-equipment
 ```
