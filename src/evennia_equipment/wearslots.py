@@ -399,10 +399,16 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
             names something the items do not carry.
         """
         record = self.worn_equipment_record or set()
-        return [
-            self.wear(item)
-            for item in walk_contents(self, self, f_identity_in(record))
-        ]
+        outcomes = []
+        for item in walk_contents(self, self, f_identity_in(record)):
+            worn, message = self.wear(item)
+            if not worn:
+                # INFO: the same refusal goes back to the caller, but a caller
+                # may discard the list, and this line is what lets "my gear
+                # came back unworn" be looked up afterwards.
+                equipment_log(f"{self} restore refused for {item}: {message}")
+            outcomes.append((worn, message))
+        return outcomes
 
     def at_pre_remove(self, item):
         """Whether this item may come off. Override to refuse.

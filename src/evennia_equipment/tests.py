@@ -1484,6 +1484,25 @@ class RestoreWornTests(DjangoTestCase):
         wearer.restore_worn()
         self.assertEqual(set(wearer.worn_equipment_record), before)
 
+    def test_rw_07_a_refused_restore_is_logged(self):
+        """RW-07"""
+        wearer, helmet = self._dressed()
+        with mock.patch("evennia_equipment.wearslots.equipment_log") as logged:
+            wearer.restore_worn()
+        self.assertEqual(logged.call_count, 1)
+        message = logged.call_args.args[0]
+        self.assertIn(str(wearer), message)
+        self.assertIn(str(helmet), message)
+        self.assertIn("already wearing", message)
+        self.assertEqual(logged.call_args.kwargs.get("level", "INFO"), "INFO")
+
+    def test_rw_08_a_clean_restore_logs_nothing(self):
+        """RW-08"""
+        wearer, _ = self._rebuilt()
+        with mock.patch("evennia_equipment.wearslots.equipment_log") as logged:
+            wearer.restore_worn()
+        logged.assert_not_called()
+
 
 class WornAndCarriedTests(DjangoTestCase):
     """GW, GC — what a wearer has on, and what it merely holds."""

@@ -979,6 +979,8 @@ all fit now, whatever order `contents` gives them. No sorting, no second pass, n
 | RW-04 | An item that cannot be worn returns `wear()`'s refusal | test_rw_04_an_item_that_cannot_be_worn_returns_wears_refusal |
 | RW-05 | The record is unchanged by restoring | test_rw_05_the_record_is_unchanged_by_restoring |
 | RW-06 | An item that is not wearable at all is passed over | test_rw_06_an_item_that_is_not_wearable_is_passed_over |
+| RW-07 | A refused restore logs an INFO naming the wearer, the item and the refusal | test_rw_07_a_refused_restore_is_logged |
+| RW-08 | A restore where every item goes on logs nothing | test_rw_08_a_clean_restore_logs_nothing |
 
 `RW-04`'s real trigger is a slot removed from `body_slots` since the record was written. The item comes
 back carried rather than worn, and the refusal says why — which is the whole diagnostic a consumer
@@ -991,6 +993,11 @@ one call per restore, which is the intended use, and worth knowing rather than d
 `RW-06` is the ordinary case that walking `contents` invites. A character carries rocks and bread as
 well as armour, and a plain carriable item has no `wearslot_identity` to ask about — reading one
 raises rather than returning `None`.
+
+`RW-07` is INFO, not WARN: a refused restore is the mechanism working on state that changed
+underneath it, and the same refusal is already returned to the caller. The log line is durability —
+it survives a consumer that discards the list, so "my gear came back unworn" can be looked up.
+`RW-08` is the noise guard: a clean restore is the ordinary case and says nothing.
 
 A returned list of refusals is also the only signal that `EQUIPMENT_IDENTITY_ATTRIBUTE` names
 something the game's items do not carry — every identity is then `None`, the record is empty, and
