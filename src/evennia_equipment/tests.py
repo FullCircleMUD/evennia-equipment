@@ -1362,6 +1362,32 @@ class IdentityTests(DjangoTestCase):
         wearer.update_worn_equipment_record()
         self.assertEqual(wearer.worn_equipment_record, set())
 
+    def test_er_08_a_skipped_item_is_logged_as_a_warn(self):
+        """ER-08"""
+        from evennia_equipment.config import get_identity_attribute
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._worn(wearer, Helmet)
+        with mock.patch("evennia_equipment.wearslots.equipment_log") as logged:
+            wearer.update_worn_equipment_record()
+        self.assertEqual(logged.call_count, 1)
+        message = logged.call_args.args[0]
+        self.assertIn(str(wearer), message)
+        self.assertIn(str(helmet), message)
+        self.assertIn(get_identity_attribute(), message)
+        self.assertEqual(logged.call_args.kwargs.get("level"), "WARN")
+
+    def test_er_09_recording_identified_items_logs_nothing(self):
+        """ER-09"""
+        from tests.game_typeclasses import IdentifiedHelmet
+
+        wearer = self._wearer()
+        self._worn(wearer, IdentifiedHelmet)
+        with mock.patch("evennia_equipment.wearslots.equipment_log") as logged:
+            wearer.update_worn_equipment_record()
+        logged.assert_not_called()
+
     def test_er_05_an_item_taken_off_is_no_longer_in_the_record(self):
         """ER-05"""
         from tests.game_typeclasses import IdentifiedHelmet

@@ -374,11 +374,26 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
         Items with no identity are skipped — there is nothing to match them by,
         so recording anything would invent a key restore could never resolve.
         """
-        self.worn_equipment_record = {
-            identity
-            for identity in (item.wearslot_identity for item in self.get_all_worn())
-            if identity is not None
-        }
+        from evennia_equipment.config import get_identity_attribute
+
+        record = set()
+        for item in self.get_all_worn():
+            identity = item.wearslot_identity
+            if identity is None:
+                # WARN, unlike this library's other lines: only a game that
+                # archives calls this, and such a game means worn gear to be
+                # restorable — an item with no identity says its identifying
+                # system is broken. The attribute is named because a setting
+                # pointing at nothing skips every item, and this burst is the
+                # only signal before a restore comes back empty.
+                equipment_log(
+                    f"{self} record skipped {item}: no "
+                    f"{get_identity_attribute()}, so it cannot be restored.",
+                    level="WARN",
+                )
+                continue
+            record.add(identity)
+        self.worn_equipment_record = record
 
     def restore_worn(self):
         """Put back on whatever the record says was worn.

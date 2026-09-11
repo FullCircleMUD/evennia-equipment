@@ -951,6 +951,8 @@ the last call is absent from it.
 | ER-05 | An item taken off since the last call is no longer in the record | test_er_05_an_item_taken_off_is_no_longer_in_the_record |
 | ER-06 | Calling it twice gives the same result | test_er_06_calling_it_twice_gives_the_same_result |
 | ER-07 | The record is persisted on the wearer, not held in memory | test_er_07_the_record_is_persisted_not_held_in_memory |
+| ER-08 | A skipped identity-less item logs a WARN naming the wearer, the item and the attribute | test_er_08_a_skipped_item_is_logged_as_a_warn |
+| ER-09 | Recording identified items logs nothing | test_er_09_recording_identified_items_logs_nothing |
 
 `ER-05` is what makes it a record of the present rather than a history. An append-only implementation
 passes every other case here and slowly accumulates gear the character no longer owns, which restore
@@ -958,6 +960,12 @@ would then look for and never find.
 
 `ER-07` is the case the word "cache" would have talked us out of. A record that does not survive the
 archive is worth nothing, since surviving the archive is the only reason it exists.
+
+`ER-08` is WARN where the library's other lines are INFO. Skipping is tolerated behaviour — `ER-04`
+pins it — but this method only runs in a game that archives, and such a game has declared worn gear
+restorable, so a worn item with no identity means its identity system is broken. The line names the
+attribute because the worst case — the setting pointing at something no item carries — skips every
+item, and a burst of these at archive time is the only signal before a restore comes back empty.
 
 ### RW — putting the equipment back on
 
