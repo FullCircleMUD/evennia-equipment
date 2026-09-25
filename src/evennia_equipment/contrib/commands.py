@@ -11,7 +11,10 @@ same however a player reached it.
 # of why it is separate from core.
 from evennia import Command
 
-from evennia_equipment.contrib.utils import match_slot, split_argument
+# The shared splitter: the last whole-word keyword, in any case.
+from evennia_targeting import parse_split
+
+from evennia_equipment.contrib.utils import match_slot
 
 
 class CmdWear(Command):
@@ -38,10 +41,10 @@ class CmdWear(Command):
             caller.msg("Wear what?")
             return
 
-        item_text, slot_text, named = split_argument(self.args, "on")
+        item_text, slot_text = parse_split(self.args, "on")
 
         slot = None
-        if named:
+        if slot_text is not None:
             # Matched before wear() is called, so a mistyped slot never puts
             # the item on somewhere else first.
             slot, refusal = match_slot(caller, slot_text)
@@ -87,13 +90,12 @@ class CmdRemove(Command):
             caller.msg("Remove what?")
             return
 
-        # A leading "from" is the third form — a slot with no item — and the
-        # padding in split_argument() is what makes it an ordinary split
-        # rather than a case of its own.
-        item_text, slot_text, named = split_argument(args, "from")
+        # A leading "from" is the third form — a slot with no item — and it is
+        # an ordinary split: nothing before the keyword is an empty item.
+        item_text, slot_text = parse_split(args, "from")
 
         slot = None
-        if named:
+        if slot_text is not None:
             # Matched before remove() is called, so a mistyped slot never
             # strips something else first.
             slot, refusal = match_slot(caller, slot_text)

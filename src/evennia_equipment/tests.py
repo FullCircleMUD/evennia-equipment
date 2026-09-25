@@ -2681,6 +2681,15 @@ class WearCommandTests(EvenniaCommandTest):
         self.call(CmdWear(), "ring on a chain on right hand", caller=wearer)
         self.assertIs(wearer.worn_items["RIGHT_HAND"], ring)
 
+    def test_cw_09_on_splits_the_argument_in_any_case(self):
+        """CW-09"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        ring = self._held(wearer, Ring, "ring")
+        self.call(CmdWear(), "ring ON right hand", caller=wearer)
+        self.assertIs(wearer.worn_items["RIGHT_HAND"], ring)
+
 
 class RemoveCommandTests(EvenniaCommandTest):
     """CM — the command a player types to take something off."""
@@ -2797,6 +2806,15 @@ class RemoveCommandTests(EvenniaCommandTest):
         wearer = self._wearer()
         ring = self._worn(wearer, Ring, "a ring from a king")
         self.call(CmdRemove(), "ring from a king from left hand", caller=wearer)
+        self.assertFalse(wearer.is_worn(ring))
+
+    def test_cm_10_from_splits_the_argument_in_any_case(self):
+        """CM-10"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        ring = self._worn(wearer, Ring, "ring")
+        self.call(CmdRemove(), "ring FROM left hand", caller=wearer)
         self.assertFalse(wearer.is_worn(ring))
 
 

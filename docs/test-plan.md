@@ -1170,6 +1170,7 @@ was named at all, and is the case the syntax exists for.
 | CW-06 | `on` with nothing after it is refused | test_cw_06_on_with_nothing_after_it_is_refused |
 | CW-07 | The room is told, and the wearer is not told twice | test_cw_07_the_room_is_told_and_the_wearer_is_not_told_twice |
 | CW-08 | Only the last ` on ` splits the argument | test_cw_08_only_the_last_on_splits_the_argument |
+| CW-09 | ` on ` splits the argument in any case — `wear ring ON right hand` wears it there. Split with `evennia_targeting.parse_split` | test_cw_09_on_splits_the_argument_in_any_case |
 
 `CW-05` is ordered deliberately: the slot is matched **before** `wear()` is called, so a mistyped slot
 never puts the item on somewhere else. Matching after would wear it first and then complain.
@@ -1213,6 +1214,7 @@ argument, and a split on ` from ` never sees a leading separator — so an argum
 | CM-07 | `from` with nothing after it is refused | test_cm_07_from_with_nothing_after_it_is_refused |
 | CM-08 | The room is told, and the wearer is not told twice | test_cm_08_the_room_is_told_and_the_wearer_is_not_told_twice |
 | CM-09 | Only the last ` from ` splits the argument | test_cm_09_only_the_last_from_splits_the_argument |
+| CM-10 | ` from ` splits the argument in any case — `remove ring FROM left hand` removes it. Split with `evennia_targeting.parse_split` | test_cm_10_from_splits_the_argument_in_any_case |
 
 `CM-05` is the form the whole slot argument was added for. Two rings with the same key, one on each
 hand, and `remove ring` takes whichever came first — `remove from right hand` is how a player says

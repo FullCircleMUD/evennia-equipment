@@ -471,14 +471,13 @@ remove <item> from <slot>
 remove from <slot>
 ```
 
-**Both split through `split_argument(text, keyword)`**, which pads the string before splitting on the
-**last** occurrence. Last, not first, because an item may contain the word — *a ring on a chain* — and
-splitting on the first would take the chain for a slot.
+**Both split through `evennia_targeting.parse_split(text, keyword)`**, on the **last** whole-word
+occurrence of the keyword, in any case. Last, not first, because an item may contain the word — *a
+ring on a chain* — and splitting on the first would take the chain for a slot.
 
-The padding is what makes the edges ordinary. `remove from right hand` has no item and
-`remove helmet from` has no slot, and a split needing a space each side of the keyword would miss both
-— so the item-less form needs no branch of its own, and a trailing keyword resolves to an empty slot
-rather than being swallowed into the item's name.
+The edges are ordinary splits. `remove from right hand` has nothing before the keyword, so no item;
+`remove helmet from` has nothing after it, so an empty slot rather than a name swallowing the keyword.
+The item-less form needs no branch of its own. No keyword at all comes back as no slot.
 
 The cost of splitting at all is that `wear ring on a chain`, with no slot meant, reads the chain as one
 and refuses. Nothing in the string says which was intended, so the rule is not to put ` on ` or
