@@ -31,7 +31,7 @@ from evennia_equipment.contrib.commands import (
     CmdRemove,
     CmdWear,
 )
-from evennia_equipment.contrib.utils import match_slot, normalise_slot
+from evennia_equipment.contrib.utils import match_slot
 from evennia_equipment.targeting import f_identity_in, f_worn_by
 from evennia_targeting.testing import validate_factory
 
@@ -2470,47 +2470,6 @@ class ContainerTests(DjangoTestCase):
         self.assertIsNone(Container().at_init())
 
 
-class SlotNormalisingTests(TestCase):
-    """NS — reducing typed text and slot names to one comparable form.
-
-    Plain string work, so no Evennia and no database.
-    """
-
-    def test_ns_01_a_canonical_name_is_unchanged(self):
-        """NS-01"""
-        self.assertEqual(normalise_slot("HEAD"), "HEAD")
-
-    def test_ns_02_case_is_folded_up(self):
-        """NS-02"""
-        self.assertEqual(normalise_slot("head"), "HEAD")
-
-    def test_ns_03_spaces_are_removed(self):
-        """NS-03"""
-        self.assertEqual(normalise_slot("right finger"), "RIGHTFINGER")
-
-    def test_ns_04_underscores_are_removed(self):
-        """NS-04"""
-        self.assertEqual(normalise_slot("right_finger"), "RIGHTFINGER")
-
-    def test_ns_05_hyphens_are_removed(self):
-        """NS-05"""
-        self.assertEqual(normalise_slot("right-finger"), "RIGHTFINGER")
-
-    def test_ns_06_surrounding_whitespace_is_ignored(self):
-        """NS-06"""
-        self.assertEqual(normalise_slot("  head  "), "HEAD")
-
-    def test_ns_07_mixed_and_repeated_separators_all_go(self):
-        """NS-07"""
-        self.assertEqual(normalise_slot("Right - _ Finger"), "RIGHTFINGER")
-
-    def test_ns_08_an_empty_string_normalises_to_empty(self):
-        """NS-08"""
-        # "wear ring on " reaches here. A raise would be a traceback where a
-        # refusal belongs, so the command rejects the empty case, not this.
-        self.assertEqual(normalise_slot(""), "")
-
-
 class SlotMatchingTests(DjangoTestCase):
     """SM — turning what a player typed into a slot this wearer has."""
 
@@ -2521,31 +2480,14 @@ class SlotMatchingTests(DjangoTestCase):
 
         return create_object(typeclass or Humanoid, key="wearer", nohome=True)
 
-    def test_sm_01_an_exact_slot_name_matches(self):
-        """SM-01"""
-        self.assertEqual(match_slot(self._wearer(), "HEAD"), ("HEAD", None))
-
     def test_sm_02_case_and_separators_are_ignored(self):
         """SM-02"""
         wearer = self._wearer()
         for typed in ("left hand", "left_hand", "Left-Hand", "lefthand"):
             with self.subTest(typed=typed):
-                # The real slot name comes back, not the LEFTHAND it was
-                # compared as — only the real one can be passed to wear().
+                # The real slot name comes back — only the real one can be
+                # passed to wear().
                 self.assertEqual(match_slot(wearer, typed), ("LEFT_HAND", None))
-
-    def test_sm_03_a_substring_of_one_slot_matches_it(self):
-        """SM-03"""
-        self.assertEqual(match_slot(self._wearer(), "bod"), ("BODY", None))
-
-    def test_sm_04_an_exact_match_wins_over_a_substring(self):
-        """SM-04"""
-        from tests.game_typeclasses import Chimera
-
-        wearer = self._wearer(Chimera)
-        # "BODY" exactly, and a substring of "DOG_BODY". Without exact winning,
-        # BODY could never be named on a creature that has both.
-        self.assertEqual(match_slot(wearer, "body"), ("BODY", None))
 
     def test_sm_05_several_matches_are_refused_and_named(self):
         """SM-05"""

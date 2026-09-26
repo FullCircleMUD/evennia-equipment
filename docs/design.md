@@ -406,24 +406,16 @@ balances. Those are why a consumer replaces the command rather than configures i
 
 ### Naming a slot from typed text
 
-`wear ring on right finger` needs the player's words turned into a slot name. Two helpers in
-`contrib/utils.py` do it, and both are contrib's because **core never sees typed text** — its methods
-take a slot name or an enum member.
+`wear ring on right finger` needs the player's words turned into a slot name. `match_slot(wearer,
+text)` in `contrib/utils.py` does it, and it is contrib's because **core never sees typed text** — its
+methods take a slot name or an enum member.
 
-`normalise_slot(text)` reduces a string to one comparable form: upper case, with spaces, underscores
-and hyphens removed. **Both sides go through it**, which is the point — it stops mattering how a
-consumer spelled the enum, so `RIGHT_FINGER` and `RIGHTFINGER` both answer to every spelling a player
-might type. The result is for comparison only; what reaches `wear()` is the real value.
-
-Normalising cannot insert a separator — nothing in `backpack` says where the word breaks — so stripping
-them is what makes all four spellings work. The cost is that a game naming both `BACK_PACK` and
-`BACKPACK` makes them permanently ambiguous. That is a naming mistake rather than something to design
-around: two slots differing only by a separator are two a player could never reliably name.
-
-`match_slot(wearer, text)` returns `(slot_name, None)` or `(None, refusal)` — the shape
-`_resolve_wearable()` uses, so a command reads the same for items and slots. An exact match wins
-outright, which a game with both `HAND` and `LEFT_HAND` needs; failing that, a substring, which is one
-answer or a question.
+It returns `(slot_name, None)` or `(None, refusal)` — the shape `_resolve_wearable()` uses, so a
+command reads the same for items and slots. The matching is `evennia_targeting.parse_match(...,
+substring=True)`: an exact match wins outright, which a game with both `HAND` and `LEFT_HAND` needs;
+failing that, the start of a word, then a substring. One hit is the answer; several are a question.
+Case, spaces, underscores and hyphens are ignored, so `RIGHT_FINGER` and `RIGHTFINGER` both answer to
+every spelling a player might type. What reaches `wear()` is the real value.
 
 It matches **this wearer's slots, not the whole enum**, so a humanoid asking for a dog neck is told it
 has none rather than told it is ambiguous, and a one-fingered creature is never asked which finger.

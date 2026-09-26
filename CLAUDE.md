@@ -165,7 +165,7 @@ evennia-equipment/
 │           ├── __init__.py    # the surface — the four commands and the cmdset
 │           ├── commands.py    # wear, remove, equipment, inventory
 │           ├── cmdset.py      # EquipmentCmdSet
-│           └── utils.py       # normalising and matching a typed slot name
+│           └── utils.py       # matching a typed slot name
 └── tests/                     # standalone test infrastructure
     ├── __init__.py
     ├── game_typeclasses.py    # real typeclasses carrying the mixins
