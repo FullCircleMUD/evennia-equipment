@@ -1,15 +1,35 @@
 # The contrib commands
 
-Four optional commands, so a game gets a working vocabulary without writing one. Nothing in the library
-imports them, and a game driving the mixins from its own code never installs them.
+Four optional commands — `wear`, `remove`, `equipment`, `inventory` — each as a mixin to compose onto a
+game's own command class, and as a concrete command ready to use. Nothing in the library imports them.
 
-**They are meant to be read and replaced.** Almost every game will replace `inventory` — the
-interesting parts of a listing are the parts only that game knows about. That is the bargain: a worked
-example rather than shared infrastructure.
+## 1. Compose them onto your commands
 
-## 1. Install the command set
+A game with its own command base — gates, prompts, a combat queue — composes the mixins onto it:
 
-One line in the cmdset your game already has:
+```python
+from evennia_equipment.contrib import (
+    CmdEquipmentMixin,
+    CmdInventoryMixin,
+    CmdRemoveMixin,
+    CmdWearMixin,
+)
+
+from commands.command import Command   # your game's base
+
+
+class CmdWear(CmdWearMixin, Command):
+    """Put something on. Usage: wear <item> [on <slot>]"""
+
+    key = "wear"
+```
+
+The mixin carries the behaviour; your class carries the key, aliases, locks and help text. Evennia reads
+help from the class's own docstring, so write one on yours.
+
+## 2. Or install the command set
+
+For a game without its own base, `EquipmentCmdSet` holds the four concrete commands:
 
 ```python
 # commands/default_cmdsets.py
@@ -23,18 +43,10 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(EquipmentCmdSet)
 ```
 
-**Added after the defaults, on purpose.** Merging is by key, and the later set wins — so `inventory`
-replaces Evennia's rather than competing with it, and nothing has to be removed first. The other three
-keys are new, so they simply appear.
+**Added after the defaults.** Merging is by key and the later set wins, so `inventory` replaces
+Evennia's. The other three keys are new.
 
-Taking some of them is ordinary Evennia:
-
-```python
-self.add(CmdWear())          # three of the four
-self.add(MyOwnInventory())   # ours, then yours on top
-```
-
-## 2. What each one does
+## 3. What each one does
 
 ### wear
 
@@ -43,12 +55,8 @@ wear <item>
 wear <item> on <slot>
 ```
 
-Puts something on. Without a slot the item's own preference decides — a ring goes on the first free
-finger. Naming one overrides that, which is how a player wears a ring on the hand they meant, or holds
-a sword that would otherwise be wielded.
-
-The refusals come from the mixin, so they read the same however a player reached them: *you are not
-carrying that*, *you are already wearing it*, *you have nowhere to wear it*.
+Finds the item among what the caller carries, checks it has somewhere to go, and puts it on. Naming a
+slot overrides the item's default — a ring on the finger asked for, a sword held rather than wielded.
 
 ### remove
 
@@ -58,11 +66,8 @@ remove <item> from <slot>
 remove from <slot>
 ```
 
-Takes something off, leaving it carried. Taking something off does not put it down.
-
-The third form has no counterpart in `wear`, and it is the reason slots can be named at all: with two
-identical rings, one on each hand, `remove ring` takes whichever came first and `remove from right
-hand` is the only way to say which.
+Takes something off, leaving it carried. With two identical rings, one on each hand, `remove ring` takes
+the first and `remove from right hand` is how to say which.
 
 ### equipment
 
@@ -71,7 +76,7 @@ equipment
 eq
 ```
 
-Every slot the character has, in the order its body plan declares them:
+Every slot the caller has, in body-plan order, with what is in it:
 
 ```
 Equipped Items
@@ -82,13 +87,6 @@ Equipped Items
   <Right Hand>  a greatsword
 ```
 
-An empty slot shows its name and nothing else — the absence is the information. A two-handed item
-appears under both slots it fills, because it occupies both and showing it once would leave a hand
-looking free.
-
-The column width is computed from the longest slot name, so an unusual body plan still aligns.
-`slot_column_gap` sets the space after it.
-
 ### inventory
 
 ```
@@ -97,8 +95,7 @@ inv
 i
 ```
 
-What is held and **not** worn, which is the reason this replaces Evennia's — that one lists everything
-in `contents` and so offers a player the armour they are wearing.
+What is carried and **not** worn, then what it weighs:
 
 ```
 Inventory:
@@ -110,66 +107,56 @@ Inventory:
 Carrying 9.5 of 40.0.
 ```
 
-Items stack when they say they do. `stackable` is `True` by default; set it `False` on anything a
-player would not treat as interchangeable, and each gets its own line. Two longswords are not the same
-longsword once one is chipped, and only your game knows that.
+Items stack when they say they do: `stackable` is `True` by default; set it `False` on anything a player
+would not treat as interchangeable.
 
-The summary names a limit only when one is set, since capacity is unlimited by default.
+## 4. The seams
 
-## 3. Naming a slot
+| Seam | On | Override it to |
+|---|---|---|
+| `announce(item)` | `wear`, `remove` | tell the room through your game's messaging. The default is `msg_contents` |
+| `at_success(item)` | `wear`, `remove` | do anything that follows success — a time wait in a fight. The default does nothing |
+| `extra_lines()` | `inventory` | add lines between the items and the summary — balances, resources |
+| `slot_column_gap` | `equipment` | widen the space after the slot column |
 
-`wear ring on right finger` and `remove from right_finger` both work, and so does `rightfinger`. Both
-the typed text and your slot names are reduced to one form before comparison — upper case, with spaces,
-underscores and hyphens removed — so it stops mattering how you spelled the enum.
-
-An exact match wins; failing that, a substring. `hand` on a humanoid asks which:
-
-```
-Which do you mean — left hand or right hand?
-```
-
-Matching is against **that character's** slots, not every slot in your game, so a humanoid asking for a
-dog neck is told it has none.
-
-One consequence worth knowing: the split is on the word ` on ` or ` from ` with spaces either side, so
-**do not put either in a wearable's name.** The letters are fine — *an onyx ring* and *a bone helm* are
-safe.
-
-## 4. Adding your own lines to the inventory
-
-`extra_lines()` is the one seam these commands provide. It returns `[]`, and yours returns whatever
-your game carries that is not an object — currency, resources, charges:
+`announce` and `at_success` run only when the item went on or came off.
 
 ```python
-class MyInventory(CmdInventory):
+class CmdInventory(CmdInventoryMixin, Command):
+    key = "inventory"
+
     def extra_lines(self):
         return [f"  {self.caller.gold} gold"]
 ```
 
-They appear between the items and the carrying summary, because a balance is something you are carrying
-and belongs above the line that totals what you carry.
+## 5. The helpers underneath
 
-**There are no other seams.** Anything else you want different, you get by overriding `func()` — which
-is what replacing a contrib module means, and what a game with condition labels, visibility rules or
-its own layout will do.
+`wear` and `remove` are built on helpers any command can use:
 
-## 5. What is not here
+- **`evennia_equipment.finders.find_carried(caller, text)`** and **`find_worn(caller, text)`** — the
+  item a player names, through Evennia's own search, so aliases and `sword-2` work.
+- **`evennia_equipment.finders.match_slot(caller, text)`** — typed text as one of the caller's slots.
+- **`evennia_equipment.contrib.utils.resolve_wear(caller, text)`** and **`resolve_remove(caller,
+  text)`** — the whole `wear` and `remove` argument.
 
-**`get`, `drop` and `give` are Evennia's**, untouched. `CmdGet` calls `obj.move_to(caller)`, so
-`at_pre_object_receive` already fires and a refusal from the carrying mixin is respected without a
-command of ours.
+Each returns `(answer, None)` or `(None, refusal)`, and sends nothing. An `enchant` command finding
+something in the player's pack calls `find_carried(caller, self.args)` and has its item or its refusal.
 
-**`wield` and `hold` are your game's.** They only mean something where an item's natural slot differs
-from where a player sometimes wants it, and the slot names come from your enum. `wear sword on wield`
-does everything `wield sword` does, so the capability is already here — the shorthand verb is two short
-subclasses in your own code.
+Slot names match ignoring case, spaces, underscores and hyphens: `wear ring on right finger` and
+`remove from right_finger` both work. **Do not put the spaced word ` on ` or ` from ` in a wearable's
+name** — the argument splits on it. *An onyx ring* and *a bone helm* are fine.
 
-**Nothing renders your game's concepts.** Condition, enchantment, ownership, what a blind character can
-make out — all absent, and all reasons to replace a command rather than configure it. Item names go
-through Evennia's own `get_display_name(looker)`, so a game that overrides that gets it here for free.
+## 6. What is not here
+
+**`get`, `drop` and `give` are Evennia's.** `CmdGet` calls `obj.move_to(caller)`, so the carrying
+refusal fires with no command of ours.
+
+**`wield` and `hold` are your game's.** `wear sword on wield` already does what `wield sword` would; the
+shorthand is a short subclass in your own code.
 
 ## Learn more
 
-- **[design.md](design.md)** — the mixin family these commands sit on, and the reasoning behind them.
+- **[design.md](design.md)** — why the commands and the methods under them are shaped this way.
 - **[installing.md](installing.md)** — getting the library itself running.
-- **[test-plan.md](test-plan.md)** — the `CW`, `CM`, `CE`, `CI`, `CS`, `NS` and `SM` cases cover this.
+- **[test-plan.md](test-plan.md)** — the `FC`, `FW`, `MS`, `UW`, `UR`, `CW`, `CM`, `CE`, `CI` and `CS`
+  cases.

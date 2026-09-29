@@ -6,12 +6,12 @@ underneath: what a character holds, what it weighs, and how much it can take.
 ## Status
 
 **Core works.** An object declares a weight and which slots it occupies; a wearer declares a body plan
-and can wear, remove and list — by name or by slot, with hooks either side of both so a game can apply
-whatever a worn item does. The carried total keeps itself current through arrivals, departures, reloads
+and can wear, remove and list, with hooks either side of both so a game can apply whatever a worn
+item does. Finders turn what a player typed into the item or slot. The carried total keeps itself current through arrivals, departures, reloads
 and weight changes in place, containers nest, and a character's equipment survives a world rebuild.
 
-**`contrib/` ships four optional commands** — `wear`, `remove`, `equipment` and `inventory` — merged in
-one line and meant to be read and replaced. Nothing is published. See
+**`contrib/` ships four optional commands** — `wear`, `remove`, `equipment` and `inventory` — as mixins
+to compose onto a game's own commands, or merged in one line. Nothing is published. See
 [docs/progress.md](https://github.com/FullCircleMUD/evennia-equipment/blob/main/docs/progress.md).
 
 ## The problem it solves

@@ -21,9 +21,10 @@ For the design wiki, read [docs/INDEX.md](docs/INDEX.md).
 
 ## Project status
 
-**Core and contrib are both complete.** Five mixins, wearing and removing by name or by slot, four
-hooks around them, equipment recovery across a world rebuild, and two required settings — plus four
-optional commands in `contrib/`, merged as one cmdset and meant to be read and replaced.
+**Core and contrib are both complete.** Five mixins, wearing and removing an item already found, four
+hooks around them, finders for turning typed text into an item or slot, equipment recovery across a
+world rebuild, and two required settings — plus four optional commands in `contrib/`, each a mixin to
+compose onto a game's own command, and merged as one cmdset.
 
 Not adopted by any game yet. See [docs/progress.md](docs/progress.md).
 
@@ -55,8 +56,7 @@ Every implementation decision must respect them.
    stay in FCM. Default to "consumer concern" when uncertain.
 
 3. **Test-first.** A case lands in [docs/test-plan.md](docs/test-plan.md), then the test, then the
-   code. See [test-first-process.md](../../design/test-first-process.md) for the process and the
-   rationale.
+   code. See [design-principles.md](../../design/design-principles.md) § 8.
 
 4. **Carrying is the base; wearing is a specialisation of it.** A game can have carrying without
    wearing, never the reverse. `EquipmentWearableMixin` extends `EquipmentCarriableMixin`, and
@@ -68,10 +68,10 @@ Every implementation decision must respect them.
    an item what it is; it never asks whether a sibling library is installed. A hook earns its place
    only if the library works without it being overridden.
 
-6. **A name is resolved against what the wearer holds, and nothing wider.** `wear()` and `remove()`
-   each take a string or an object, and match a string with `f_key_matches` — otherwise every command
-   filters to find an object and then hands it to a method that filters again. Rooms, containers and
-   other characters stay the command's problem. See [docs/design.md](docs/design.md) § Commands.
+6. **A command decides, then executes.** `wear()` and `remove()` take an item the caller has already
+   found, and decide nothing but their pre hooks' veto. Finding it is the command's, through
+   `finders`. See [design-principles.md](../../design/design-principles.md) § 6 and
+   [docs/design.md](docs/design.md) § Commands.
 
 7. **Every walk over `contents` goes through `evennia-targeting`.** No inline comprehension over
    `contents` anywhere. The filters this library needs are published in
@@ -158,14 +158,15 @@ evennia-equipment/
 │       ├── container.py       # EquipmentContainerMixin — carried and carrying
 │       ├── wearable.py        # EquipmentWearableMixin — an item's slot groups
 │       ├── wearslots.py       # EquipmentWearslotsMixin — slots, wear, remove
+│       ├── finders.py         # find_carried, find_worn, match_slot — typed text to item or slot
 │       ├── targeting.py       # the filters this library publishes for evennia-targeting
 │       ├── log.py             # binds equipment_log via evennia-logging-extension → equipment.log
 │       ├── tests.py           # unit tests, run via runtests.py
 │       └── contrib/           # optional; core is complete without it
-│           ├── __init__.py    # the surface — the four commands and the cmdset
-│           ├── commands.py    # wear, remove, equipment, inventory
+│           ├── __init__.py    # the surface — the four mixins, the four commands, the cmdset
+│           ├── commands.py    # wear, remove, equipment, inventory — mixins and commands
 │           ├── cmdset.py      # EquipmentCmdSet
-│           └── utils.py       # matching a typed slot name
+│           └── utils.py       # resolve_wear, resolve_remove
 └── tests/                     # standalone test infrastructure
     ├── __init__.py
     ├── game_typeclasses.py    # real typeclasses carrying the mixins

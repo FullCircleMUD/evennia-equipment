@@ -140,7 +140,8 @@ without learning that archiving exists.
 ## 9. (Optional) Add the commands
 
 The library gives your game the mechanism, not the vocabulary — nothing above lets a player type
-anything. `contrib/` ships four commands, merged in one line:
+anything. `contrib/` ships four — `wear`, `remove`, `equipment` and `inventory` — as mixins to compose
+onto your own command class (see [contrib.md](contrib.md)), or as concrete commands merged in one line:
 
 ```python
 # commands/default_cmdsets.py
@@ -153,11 +154,11 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(EquipmentCmdSet)
 ```
 
-`wear`, `remove`, `equipment` and `inventory`. Added after the defaults, so `inventory` replaces
-Evennia's rather than competing with it.
+Added after the defaults, so `inventory` replaces Evennia's rather than competing with it.
 
-Skip this step if you are writing your own — the mixins are complete without it. Full details, and
-what is deliberately absent, in **[contrib.md](contrib.md)**.
+Skip this step if you are writing your own commands on `wear()` and `remove()`. Those take the item
+already found — `evennia_equipment.finders` has `find_carried()`, `find_worn()` and `match_slot()` for
+finding it. Full details in **[contrib.md](contrib.md)**.
 
 ## Required settings
 

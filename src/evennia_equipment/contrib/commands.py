@@ -1,23 +1,130 @@
 # SPDX-License-Identifier: BSD-3-Clause
 """The commands a player types.
 
-Each one parses, speaks and broadcasts, and nothing else. Resolving an item,
-choosing slots and deciding what to say are the mixin's, so a refusal reads the
-same however a player reached it.
+``wear`` and ``remove`` come as mixins — ``CmdWearMixin`` and
+``CmdRemoveMixin`` — for a game to compose onto its own command class, and as
+``CmdWear`` and ``CmdRemove``, the same mixins over Evennia's ``Command``, for
+``EquipmentCmdSet``. Each decides in the command and hands the method an item
+it has already found: ``resolve_wear()`` and ``resolve_remove()`` do the
+finding, and ``wear()`` and ``remove()`` only execute, with their hooks.
+
+``equipment`` and ``inventory`` come the same way — ``CmdEquipmentMixin`` and
+``CmdInventoryMixin``, and ``CmdEquipment`` and ``CmdInventory`` over Evennia's
+``Command``.
 """
 
 # Evennia, because a command is Evennia's — these subclass its Command and are
 # merged into a cmdset. Nothing in contrib runs without an engine, which is part
 # of why it is separate from core.
 from evennia import Command
+from evennia_targeting import bucket_contents, op_not
 
-# The shared splitter: the last whole-word keyword, in any case.
-from evennia_targeting import parse_split
-
-from evennia_equipment.contrib.utils import match_slot
+from evennia_equipment.contrib.utils import resolve_remove, resolve_wear
+from evennia_equipment.targeting import f_worn_by
 
 
-class CmdWear(Command):
+def _slot_name(slot):
+    """A slot member as a player reads it — ``LEFT_HAND`` as ``left hand``."""
+    return slot.value.replace("_", " ").lower()
+
+
+class _EquipmentVerbMixin:
+    """The two seams ``wear`` and ``remove`` share. Both run only on success."""
+
+    #: The verb the room line conjugates.
+    verb = ""
+
+    def announce(self, item):
+        """Tell the room. Override for a game's own messaging. See CW-14.
+
+        Args:
+            item (Object): What went on or came off.
+        """
+        caller = self.caller
+        caller.location.msg_contents(
+            f"$You() $conj({self.verb}) {{item}}.",
+            from_obj=caller,
+            exclude=[caller],
+            mapping={"item": item},
+        )
+
+    def at_success(self, item):
+        """Called once the item has gone on or come off. Does nothing here.
+
+        Where a game whose equipping costs a turn in a fight starts its time
+        wait. See CW-15.
+
+        Args:
+            item (Object): What went on or came off.
+        """
+
+
+class CmdWearMixin(_EquipmentVerbMixin):
+    """Put something on: find it, check it can go where asked, wear it."""
+
+    verb = "wear"
+
+    def func(self):
+        caller = self.caller
+        text = self.args.strip()
+        if not text:
+            caller.msg("Wear what?")
+            return
+
+        answer, refusal = resolve_wear(caller, text)
+        if refusal:
+            caller.msg(refusal)
+            return
+        item, slot = answer
+        name = item.get_display_name(caller)
+
+        if caller.slots_for(item, slot) is None:
+            if not getattr(item, "wearslot", None):
+                caller.msg(f"{name} is not something you can wear.")
+            elif slot is not None:
+                caller.msg(f"{name} can't go on your {_slot_name(slot)}.")
+            else:
+                caller.msg(f"You have nowhere to wear {name}.")
+            return
+
+        worn, reason = caller.wear(item, slot)
+        if not worn:
+            caller.msg(reason)
+            return
+
+        caller.msg(f"You wear {name}.")
+        self.announce(item)
+        self.at_success(item)
+
+
+class CmdRemoveMixin(_EquipmentVerbMixin):
+    """Take something off: find it, by name or by slot, and remove it."""
+
+    verb = "remove"
+
+    def func(self):
+        caller = self.caller
+        text = self.args.strip()
+        if not text:
+            caller.msg("Remove what?")
+            return
+
+        item, refusal = resolve_remove(caller, text)
+        if refusal:
+            caller.msg(refusal)
+            return
+
+        removed, reason = caller.remove(item)
+        if not removed:
+            caller.msg(reason)
+            return
+
+        caller.msg(f"You remove {item.get_display_name(caller)}.")
+        self.announce(item)
+        self.at_success(item)
+
+
+class CmdWear(CmdWearMixin, Command):
     """
     Put something on.
 
@@ -34,37 +141,8 @@ class CmdWear(Command):
     locks = "cmd:all()"
     help_category = "Items"
 
-    def func(self):
-        caller = self.caller
 
-        if not self.args.strip():
-            caller.msg("Wear what?")
-            return
-
-        item_text, slot_text = parse_split(self.args, "on")
-
-        slot = None
-        if slot_text is not None:
-            # Matched before wear() is called, so a mistyped slot never puts
-            # the item on somewhere else first.
-            slot, refusal = match_slot(caller, slot_text)
-            if refusal:
-                caller.msg(refusal)
-                return
-
-        worn, message = caller.wear(item_text, slot=slot)
-        caller.msg(message)
-        if not worn:
-            return
-
-        caller.location.msg_contents(
-            f"$You() $conj(wear) {item_text}.",
-            from_obj=caller,
-            exclude=[caller],
-        )
-
-
-class CmdRemove(Command):
+class CmdRemove(CmdRemoveMixin, Command):
     """
     Take something off.
 
@@ -82,55 +160,9 @@ class CmdRemove(Command):
     locks = "cmd:all()"
     help_category = "Items"
 
-    def func(self):
-        caller = self.caller
-        args = self.args.strip()
 
-        if not args:
-            caller.msg("Remove what?")
-            return
-
-        # A leading "from" is the third form — a slot with no item — and it is
-        # an ordinary split: nothing before the keyword is an empty item.
-        item_text, slot_text = parse_split(args, "from")
-
-        slot = None
-        if slot_text is not None:
-            # Matched before remove() is called, so a mistyped slot never
-            # strips something else first.
-            slot, refusal = match_slot(caller, slot_text)
-            if refusal:
-                caller.msg(refusal)
-                return
-
-        removed, message = caller.remove(item_text or None, slot=slot)
-        caller.msg(message)
-        if not removed:
-            return
-
-        caller.location.msg_contents(
-            f"$You() $conj(remove) {item_text or slot_text}.",
-            from_obj=caller,
-            exclude=[caller],
-        )
-
-
-class CmdEquipment(Command):
-    """
-    See what you are wearing.
-
-    Usage:
-        equipment
-        eq
-
-    Lists every slot your body has, in order, and what is in it. An empty slot
-    shows its name and nothing else.
-    """
-
-    key = "equipment"
-    aliases = ["eq"]
-    locks = "cmd:all()"
-    help_category = "Items"
+class CmdEquipmentMixin:
+    """Every slot the caller has, in body-plan order, and what is in it."""
 
     # Spaces between the slot column and the item name. A class attribute
     # rather than a module constant, so a game widens it by subclassing.
@@ -138,13 +170,12 @@ class CmdEquipment(Command):
 
     def func(self):
         caller = self.caller
-        slots = caller.worn_items or {}
+        slots = caller.worn_items
 
         names = {slot: slot.replace("_", " ").title() for slot in slots}
         # Computed rather than fixed, so a body plan naming a
-        # LEFT_SHOULDER_PAULDRON still lines up. The brackets are part of the
-        # column, hence the two.
-        width = max((len(name) for name in names.values()), default=0) + 2
+        # LEFT_SHOULDER_PAULDRON still lines up.
+        longest = max((len(name) for name in names.values()), default=0)
 
         lines = ["|wEquipped Items|n", ""]
         for slot, item in slots.items():
@@ -156,37 +187,21 @@ class CmdEquipment(Command):
                 continue
             # Evennia's own viewer-aware hook, so a game with darkness gets
             # this listing right without a seam of ours.
-            pad = " " * (width - len(names[slot]) - 2 + self.slot_column_gap)
+            pad = " " * (longest - len(names[slot]) + self.slot_column_gap)
             lines.append(f"  {bracket}{pad}|w{item.get_display_name(caller)}|n")
 
         caller.msg("\n".join(lines))
 
 
-class CmdInventory(Command):
-    """
-    See what you are carrying.
-
-    Usage:
-        inventory
-        inv
-        i
-
-    Lists what you hold but are not wearing, and what it all weighs. Type
-    `equipment` for what you have on.
-    """
-
-    key = "inventory"
-    aliases = ["inv", "i"]
-    locks = "cmd:all()"
-    help_category = "Items"
+class CmdInventoryMixin:
+    """What the caller carries and is not wearing, then what it all weighs."""
 
     def extra_lines(self):
         """Lines to show between the items and the carrying summary.
 
-        Empty here, and the one seam contrib provides. A game's currency and
+        Empty here, and the one seam the listing has. A game's currency and
         resource balances are more things being carried rather than a footer
-        after them, so they belong above the line that totals what is carried —
-        a position no override of the rendering could reach.
+        after them, so they belong above the line that totals what is carried.
 
         Returns:
             list: Strings, already formatted. Empty by default.
@@ -196,23 +211,16 @@ class CmdInventory(Command):
     def func(self):
         caller = self.caller
 
-        # Stacked by key, not by what is shown: two copies of one thing, only
-        # one of which this looker can make out, must stay two lines or the
-        # counts stop being the real ones.
-        stacks = {}
-        singles = []
-        for item in caller.get_carried():
-            if getattr(item, "stackable", True):
-                stacks.setdefault(item.key, []).append(item)
-            else:
-                singles.append(item)
+        # One walk that filters out what is worn and groups the rest. Grouped
+        # by key, not by what is shown: two different things a looker makes
+        # out the same must stay two lines. See CI-05.
+        groups = bucket_contents(caller, caller, _stack_key, op_not(f_worn_by(caller)))
 
         items = []
-        for group in stacks.values():
+        for group in groups.values():
             name = group[0].get_display_name(caller)
             count = len(group)
             items.append(f"  {name} ({count})" if count > 1 else f"  {name}")
-        items.extend(f"  {item.get_display_name(caller)}" for item in singles)
 
         lines = ["|wInventory:|n", ""]
         lines.extend(items or ["  You are not carrying anything."])
@@ -232,3 +240,51 @@ class CmdInventory(Command):
             lines.append(f"Carrying {carried:.1f} of {capacity:.1f}.")
 
         caller.msg("\n".join(lines))
+
+
+def _stack_key(item, caller):  # noqa: ARG001
+    """A stackable item's bucket is its key; an unstackable one gets its own.
+
+    ``stackable`` is ``True`` unless the item says otherwise. See CI-03 and
+    CI-13.
+    """
+    if getattr(item, "stackable", True):
+        return item.key
+    return id(item)
+
+
+class CmdEquipment(CmdEquipmentMixin, Command):
+    """
+    See what you are wearing.
+
+    Usage:
+        equipment
+        eq
+
+    Lists every slot your body has, in order, and what is in it. An empty slot
+    shows its name and nothing else.
+    """
+
+    key = "equipment"
+    aliases = ["eq"]
+    locks = "cmd:all()"
+    help_category = "Items"
+
+
+class CmdInventory(CmdInventoryMixin, Command):
+    """
+    See what you are carrying.
+
+    Usage:
+        inventory
+        inv
+        i
+
+    Lists what you hold but are not wearing, and what it all weighs. Type
+    `equipment` for what you have on.
+    """
+
+    key = "inventory"
+    aliases = ["inv", "i"]
+    locks = "cmd:all()"
+    help_category = "Items"

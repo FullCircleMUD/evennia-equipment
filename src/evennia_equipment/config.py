@@ -195,3 +195,14 @@ def valid_slot_names() -> frozenset:
     return frozenset(
         member.value for member in import_string(getattr(settings, SETTING_WEARSLOTS))
     )
+
+
+def get_slot_enum() -> type:
+    """Return the enum ``EQUIPMENT_WEARSLOTS`` names. Checked at boot.
+
+    Resolved on each call rather than held, so a test that swaps the setting
+    needs nothing cleared.
+    """
+    from django.conf import settings
+
+    return import_string(getattr(settings, SETTING_WEARSLOTS))

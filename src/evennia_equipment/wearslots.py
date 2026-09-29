@@ -24,7 +24,7 @@ from enum import Enum
 # attribute handler, and the mechanism this library validates through. There is
 # no engine-free equivalent to import instead.
 from evennia.typeclasses.attributes import AttributeProperty
-from evennia_targeting import f_key_matches, op_not, walk_contents
+from evennia_targeting import op_not, walk_contents
 
 from evennia_equipment.carrying import EquipmentCarryingMixin
 from evennia_equipment.log import equipment_log
@@ -207,117 +207,79 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
         """
         return walk_contents(self, self, op_not(f_worn_by(self)))
 
-    def _resolve_wearable(self, text):
-        """Find the item ``text`` names among the things this wearer holds.
+    def slots_for(self, item, slot=None):
+        """Return the group of slots ``item`` would fill, or ``None``.
 
-        Two ordered passes, because that is what makes the refusals accurate.
-        A single pass over the unworn items tells someone already wearing the
-        helmet that they are not carrying it, which is both false and useless.
+        A query: it changes nothing and decides nothing. A caller asks it
+        before :meth:`wear`, which asks it again, so the check and the
+        placement cannot disagree. See WE-37.
+
+        The item's groups are walked in declaration order — the item author's
+        preference — and the first whose every slot exists on this wearer and
+        is free is the answer. ``slot`` overrides that preference by narrowing
+        to the groups containing it; a group is taken whole, so a greatsword
+        named by one hand still needs both. See WE-24 and WE-42.
 
         Args:
-            text (str): What the player typed.
+            item (Object): The object to place.
+            slot (Enum, optional): A member of the slot enum it must go in.
 
         Returns:
-            tuple: ``(item, None)`` when one item is the answer, or
-            ``(None, refusal)`` when none is.
+            tuple or None: The slot names it would fill, or ``None`` when no
+            group fits.
         """
-        name = f_key_matches(text)
+        groups = getattr(item, "wearslot", None) or []
+        if slot is not None:
+            groups = [group for group in groups if slot.value in group]
 
-        carried = walk_contents(self, self, op_not(f_worn_by(self)), name)
-        if carried:
-            # Items sharing a key are interchangeable, so the first is the
-            # answer. Differing keys are a real question — and it echoes what
-            # was typed rather than listing candidates, which could be five.
-            if len({obj.key.lower() for obj in carried}) > 1:
-                return (None, f"Which {text} do you mean?")
-            return (carried[0], None)
-
-        worn = walk_contents(self, self, f_worn_by(self), name)
-        if worn:
-            return (None, f"You are already wearing {worn[0]}.")
-
-        return (None, f"You are not carrying {text}.")
+        slots = self.worn_items
+        for group in groups:
+            if all(name in slots and slots[name] is None for name in group):
+                return tuple(group)
+        return None
 
     def wear(self, item, slot=None):
-        """Put an item into the first group of slots that will take it.
+        """Put ``item`` into the group of slots :meth:`slots_for` names.
 
-        Takes a string or an object. A string is resolved against what this
-        wearer holds — otherwise a command has to filter the contents to find
-        an object, only to hand it to a method that filters again to confirm
-        what the caller just established. An object is still accepted, because
-        ``restore_worn()`` and a consumer equipping something it has just made
-        both hold one, and two identical rings are distinct objects but the
-        same string.
-
-        **``slot`` overrides the item author's preference.** Without it, the
-        first group that fits wins, so a shortsword declaring
-        ``[["WIELD"], ["HOLD"]]`` goes to the wield hand whenever that hand is
-        free — and a player asking to hold it gets it wielded. Naming a slot
-        narrows the candidate groups to those *containing* it, and selection
-        proceeds as before over what is left.
+        ``item`` is the object, already found by the caller, and the caller has
+        already asked :meth:`slots_for` — this identifies nothing. The one
+        refusal is :meth:`at_pre_wear`'s, the hook other components veto
+        through. See WE-31.
 
         Args:
-            item (Object or str): The object to wear, or what the player typed.
-            slot (str or Enum, optional): The place it must go. An enum member
-                or its value; both are accepted. ``None`` takes the first group
-                that fits.
+            item (Object): The carried object to put on.
+            slot (Enum, optional): A member of the slot enum it must go in.
+                ``None`` takes the first group that fits.
 
         Returns:
-            tuple: ``(bool, str)`` — whether it was worn, and why not if it was
-            not. The mixin answers; the command speaks.
+            tuple: ``(True, "")`` when it went on, or ``(False, reason)`` when
+            :meth:`at_pre_wear` refused. The command speaks either way.
+
+        Raises:
+            ValueError: If ``item`` is not carried, is already worn, or has
+                nowhere free to go. Each is a caller bug, and each would
+                otherwise leave a corrupt state — worn but not carried, worn
+                twice, or a call that did nothing. See WE-43 to WE-45.
         """
-        if isinstance(item, str):
-            resolved, refusal = self._resolve_wearable(item)
-            if resolved is None:
-                return (False, refusal)
-            item = resolved
-
         if item not in self.contents:
-            return (False, f"You are not carrying {item}.")
-
+            raise ValueError(f"{item!r} is not carried by {self!r}.")
         if self.is_worn(item):
-            return (False, f"You are already wearing {item}.")
+            raise ValueError(f"{item!r} is already worn by {self!r}.")
+        group = self.slots_for(item, slot)
+        if group is None:
+            raise ValueError(f"{item!r} has nowhere free to go on {self!r}.")
 
-        groups = getattr(item, "wearslot", None)
-        if not groups:
-            return (False, f"{item} is not something you can wear.")
-
-        slots = self.worn_items or {}
-
-        if slot is not None:
-            # An enum member or its value. A consumer declares body_slots with
-            # members and reads worn_items keyed by their values, so demanding
-            # either one would be the wrong one to somebody.
-            slot = getattr(slot, "value", slot)
-
-            if slot not in slots:
-                return (False, f"You have no {slot}.")
-
-            # Narrow to the groups containing it, rather than to the slot
-            # alone: a group is taken whole, so a greatsword named by one hand
-            # still takes both.
-            groups = [group for group in groups if slot in group]
-            if not groups:
-                return (False, f"{item} cannot be worn on your {slot}.")
-
-        allowed, refusal = self.at_pre_wear(item)
+        allowed, reason = self.at_pre_wear(item)
         if not allowed:
-            return (False, refusal)
+            return (False, reason)
 
-        # Choose before writing anything. Filling slots as they are checked
-        # would leave a two-handed item in one hand when the other turns out
-        # to be occupied.
-        for group in groups:
-            if all(slot in slots and slots[slot] is None for slot in group):
-                worn = dict(slots)
-                worn.update({slot: item for slot in group})
-                self.worn_items = worn
-                # After the write, so a consumer recalculating from
-                # get_all_worn() sees the item it was just told about.
-                self.at_post_wear(item, tuple(group))
-                return (True, f"You wear {item}.")
-
-        return (False, f"You have nowhere to wear {item}.")
+        worn = dict(self.worn_items)
+        worn.update({name: item for name in group})
+        self.worn_items = worn
+        # After the write, so a consumer recalculating from get_all_worn()
+        # sees the item it was just told about.
+        self.at_post_wear(item, group)
+        return (True, "")
 
     def at_pre_wear(self, item):
         """Whether this item may go on. Override to refuse.
@@ -326,9 +288,9 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
         class restriction, an alignment rule, a cursed item that will not be
         worn by the unworthy — whatever their game holds.
 
-        Fires after the ordinary refusals and before a slot is chosen, so it
-        never sees a state the library would have rejected anyway, and never has
-        to reason about where the item is going.
+        Asked inside :meth:`wear`, after its guards and before anything is
+        written, so it never sees a state the library would have rejected
+        anyway.
 
         Args:
             item (Object): The object about to go on.
@@ -407,16 +369,27 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
         not matter: the items all fitted at once when the record was written,
         so they fit now in whatever order ``contents`` gives them.
 
+        A caller of :meth:`wear` like any other: an item already worn, or with
+        nowhere free to go, is refused here rather than handed on to raise.
+        No slot is passed — the record holds identities, not slots — so each
+        item goes into its default group. Nothing is sent to the player; a
+        refusal leaves the item carried.
+
         Returns:
-            list: One ``(bool, str)`` per item attempted, straight from
-            ``wear()``. A refusal is the only diagnostic a consumer gets, and
-            it is the one that says a slot has gone or the identity attribute
-            names something the items do not carry.
+            list: One ``(bool, str)`` per item attempted. A refusal is the only
+            diagnostic a consumer gets, and it is the one that says a slot has
+            gone or the identity attribute names something the items do not
+            carry.
         """
         record = self.worn_equipment_record or set()
         outcomes = []
         for item in walk_contents(self, self, f_identity_in(record)):
-            worn, message = self.wear(item)
+            if self.is_worn(item):
+                worn, message = (False, f"You are already wearing {item}.")
+            elif self.slots_for(item) is None:
+                worn, message = (False, f"You have nowhere to wear {item}.")
+            else:
+                worn, message = self.wear(item)
             if not worn:
                 # INFO: the same refusal goes back to the caller, but a caller
                 # may discard the list, and this line is what lets "my gear
@@ -440,123 +413,37 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
         Args:
             item (Object): The object about to come off.
 
+        Asked inside :meth:`remove`, after its guard and before anything is
+        written.
+
         Returns:
-            tuple: ``(bool, str)`` — the same shape ``remove()`` returns, so a
-            consumer's reason reaches the player rather than being replaced by
-            something generic.
+            tuple: ``(bool, str)`` — whether it may come off, and the reason
+            the player reads if it may not.
         """
         return (True, "")
 
-    def _resolve_worn(self, text):
-        """Find the item ``text`` names among the things this wearer has on.
-
-        The mirror of :meth:`_resolve_wearable`, and ordered for the same
-        reason. Searching only the worn items tells a player holding the boots
-        that they are not carrying them, when the useful answer is that they
-        are carrying them and not wearing them.
-
-        Args:
-            text (str): What the player typed.
-
-        Returns:
-            tuple: ``(item, None)`` when one item is the answer, or
-            ``(None, refusal)`` when none is.
-        """
-        name = f_key_matches(text)
-
-        worn = walk_contents(self, self, f_worn_by(self), name)
-        if worn:
-            if len({obj.key.lower() for obj in worn}) > 1:
-                return (None, f"Which {text} do you mean?")
-            return (worn[0], None)
-
-        carried = walk_contents(self, self, op_not(f_worn_by(self)), name)
-        if carried:
-            return (None, f"You are not wearing {carried[0]}.")
-
-        return (None, f"You are not carrying {text}.")
-
-    def _worn_in_slot(self, slot):
-        """Return what occupies ``slot``, or why nothing can come off it.
-
-        Args:
-            slot (str): A slot name, already normalised from an enum member.
-
-        Returns:
-            tuple: ``(item, None)`` when something is there, or
-            ``(None, refusal)`` when nothing is.
-        """
-        slots = self.worn_items or {}
-        if slot not in slots:
-            return (None, f"You have no {slot}.")
-        # Two answers, not one. "You have no right finger" is about the
-        # wearer's body; "you are wearing nothing on it" is about what is there
-        # now, and only the second invites the player to look again.
-        if slots[slot] is None:
-            return (None, f"You are wearing nothing on your {slot}.")
-        return (slots[slot], None)
-
-    def remove(self, item=None, slot=None):
-        """Free every slot an item occupies, leaving it in ``contents``.
+    def remove(self, item):
+        """Free every slot ``item`` occupies, leaving it in ``contents``.
 
         Taking something off does not put it down.
 
-        ``item`` is a string or an object, on the same reasoning as :meth:`wear`
-        and with the search mirrored: a string resolves against what the wearer
-        has on rather than what it carries.
-
-        **``slot`` can stand on its own**, which is where this differs from
-        :meth:`wear`. Wearing nothing into a slot means nothing, but taking off
-        whatever is on the right finger is a complete instruction. Given both,
-        the item must actually be in that slot — which is the only way to pick
-        between two rings with the same key, one on each hand.
+        ``item`` is the object, already found by the caller — by name, or read
+        out of a slot — so this identifies nothing. The one refusal is
+        :meth:`at_pre_remove`'s, the hook other components veto through. See
+        RM-11.
 
         Args:
-            item (Object or str, optional): The object to take off, or what the
-                player typed. ``None`` with a ``slot`` means whatever is in it.
-            slot (str or Enum, optional): The place to take it from. An enum
-                member or its value; both are accepted.
+            item (Object): The worn object to take off.
 
         Returns:
-            tuple: ``(bool, str)`` — whether it came off, and why not if it
-            did not.
+            tuple: ``(True, "")`` when it came off, or ``(False, reason)`` when
+            :meth:`at_pre_remove` refused. The command speaks either way.
+
+        Raises:
+            ValueError: If ``item`` is not worn. The caller should have settled
+                that, so reaching here is a caller bug. See RM-35.
         """
-        if item is None and slot is None:
-            return (False, "Remove what?")
-
-        if slot is not None:
-            # An enum member or its value, as wear() takes.
-            slot = getattr(slot, "value", slot)
-            in_slot, refusal = self._worn_in_slot(slot)
-            if in_slot is None:
-                return (False, refusal)
-
-            if item is None:
-                item = in_slot
-            elif isinstance(item, str):
-                # The string confirms what is in the slot rather than being
-                # resolved on its own. Resolving would return the first of two
-                # rings sharing a key — which is the case the slot exists to
-                # get past, so it must not be reintroduced here.
-                if not f_key_matches(item)(in_slot, self):
-                    return (False, f"You are not wearing {item} on your {slot}.")
-                item = in_slot
-            elif item is not in_slot:
-                return (False, f"{item} is not on your {slot}.")
-
-        elif isinstance(item, str):
-            resolved, refusal = self._resolve_worn(item)
-            if resolved is None:
-                return (False, refusal)
-            item = resolved
-
-        worn = self.worn_items or {}
-        if not self.is_worn(item):
-            return (False, f"You are not wearing {item}.")
-
-        allowed, refusal = self.at_pre_remove(item)
-        if not allowed:
-            return (False, refusal)
+        worn = self.worn_items
 
         # Every slot holding it, not the first one found: a two-handed item
         # sits under two keys, and freeing one leaves a phantom in the other.
@@ -565,13 +452,20 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
         # id, and equality would then free every slot holding something that
         # merely looks the same.
         freed = tuple(name for name, held in worn.items() if held is item)
+        if not freed:
+            raise ValueError(f"{item!r} is not worn by {self!r}.")
+
+        allowed, reason = self.at_pre_remove(item)
+        if not allowed:
+            return (False, reason)
+
         self.worn_items = {
             name: (None if held is item else held) for name, held in worn.items()
         }
         # Gathered before the write and passed, because afterwards nothing
         # records where the item sat.
         self.at_post_remove(item, freed)
-        return (True, f"You remove {item}.")
+        return (True, "")
 
     def at_post_remove(self, item, slots):
         """Called once an item has come off. Override to react.
@@ -580,8 +474,8 @@ class EquipmentWearslotsMixin(EquipmentCarryingMixin):
         whatever wearing applied — a ring of strength stops helping when it
         comes off, and nothing else tells a game that happened.
 
-        Fires only on success, and after the slots are freed, so
-        ``get_all_worn()`` no longer includes the item.
+        Fires after the slots are freed, so ``get_all_worn()`` no longer
+        includes the item.
 
         Args:
             item (Object): What came off.

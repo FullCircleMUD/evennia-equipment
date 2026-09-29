@@ -2,6 +2,22 @@
 
 Running log of milestones with links to evidence. Reverse chronological — newest first.
 
+## 2026-09-29 — commands decide, the methods execute
+
+`wear()` and `remove()` take an item already found, and the finding moved to helpers any command can
+use. The contrib commands are mixins for a game to compose onto its own command class. 287 tests.
+
+- **`wear(item, slot=None)` and `remove(item)`** execute: guards for caller bugs raise, the pre hook is
+  the one veto and returns `(False, reason)`, and success returns `(True, "")`. `slots_for(item,
+  slot=None)` answers where an item would go, and changes nothing. Cases `WE`, `RM`.
+- **`restore_worn()`** checks already-worn and nowhere-to-go itself before each `wear()`. Cases `RW-03`,
+  `RW-04`, `RW-09`.
+- **`finders`** — `find_carried()`, `find_worn()` and `match_slot()`, through Evennia's search and
+  `parse_match`. Cases `FC`, `FW`, `MS`.
+- **`contrib`** — `CmdWearMixin`, `CmdRemoveMixin`, `CmdEquipmentMixin` and `CmdInventoryMixin`, with
+  `resolve_wear()` and `resolve_remove()`, and the concrete commands over Evennia's `Command`. New
+  seams `announce()` and `at_success()`. Cases `UW`, `UR`, `CW`, `CM`, `CE-09`, `CI-15`.
+
 ## 2026-09-11 — three log lines where nothing else witnesses
 
 An inspection for unlogged failure paths found three, all on the archive-restore pipeline; everything

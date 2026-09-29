@@ -27,11 +27,16 @@ from evennia.utils.test_resources import EvenniaCommandTest
 from evennia_equipment.contrib.cmdset import EquipmentCmdSet
 from evennia_equipment.contrib.commands import (
     CmdEquipment,
+    CmdEquipmentMixin,
     CmdInventory,
+    CmdInventoryMixin,
     CmdRemove,
+    CmdRemoveMixin,
     CmdWear,
+    CmdWearMixin,
 )
-from evennia_equipment.contrib.utils import match_slot
+from evennia_equipment.contrib.utils import resolve_remove, resolve_wear
+from evennia_equipment.finders import find_carried, find_worn, match_slot
 from evennia_equipment.targeting import f_identity_in, f_worn_by
 from evennia_targeting.testing import validate_factory
 
@@ -432,8 +437,7 @@ class WearTests(DjangoTestCase):
 
         wearer = self._wearer()
         helmet = self._held(wearer, Helmet)
-        worn, _ = wearer.wear(helmet)
-        self.assertTrue(worn)
+        wearer.wear(helmet)
         self.assertIs(wearer.worn_items["HEAD"], helmet)
 
     def test_we_02_a_multi_slot_item_fills_every_slot_in_its_group(self):
@@ -475,8 +479,9 @@ class WearTests(DjangoTestCase):
         ring = self._held(wearer, Ring)
         sword = self._held(wearer, Greatsword)
         wearer.wear(ring)
-        worn, _ = wearer.wear(sword)
-        self.assertFalse(worn)
+        self.assertIsNone(wearer.slots_for(sword))
+        with self.assertRaises(ValueError):
+            wearer.wear(sword)
         self.assertIs(wearer.worn_items["LEFT_HAND"], ring)
         self.assertIsNone(wearer.worn_items["RIGHT_HAND"])
 
@@ -485,48 +490,7 @@ class WearTests(DjangoTestCase):
         from tests.game_typeclasses import Collar
 
         wearer = self._wearer()
-        worn, _ = wearer.wear(self._held(wearer, Collar))
-        self.assertFalse(worn)
-
-    def test_we_07_an_item_not_in_contents_is_refused(self):
-        """WE-07"""
-        from evennia import create_object
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        loose = create_object(Helmet, key="helmet", nohome=True)
-        worn, _ = wearer.wear(loose)
-        self.assertFalse(worn)
-        self.assertIsNone(wearer.worn_items["HEAD"])
-
-    def test_we_08_an_item_already_worn_is_refused(self):
-        """WE-08"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        helmet = self._held(wearer, Helmet)
-        wearer.wear(helmet)
-        worn, _ = wearer.wear(helmet)
-        self.assertFalse(worn)
-
-    def test_we_09_an_item_declaring_no_slots_is_refused(self):
-        """WE-09"""
-        from tests.game_typeclasses import WearableThing
-
-        wearer = self._wearer()
-        worn, _ = wearer.wear(self._held(wearer, WearableThing))
-        self.assertFalse(worn)
-
-    def test_we_10_wearing_is_refused_when_no_group_is_usable(self):
-        """WE-10"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        first, second = self._held(wearer, Helmet), self._held(wearer, Helmet)
-        wearer.wear(first)
-        worn, _ = wearer.wear(second)
-        self.assertFalse(worn)
-        self.assertIs(wearer.worn_items["HEAD"], first)
+        self.assertIsNone(wearer.slots_for(self._held(wearer, Collar)))
 
     def test_we_11_wearing_does_not_move_the_item(self):
         """WE-11"""
@@ -548,223 +512,32 @@ class WearTests(DjangoTestCase):
         wearer.wear(helmet)
         self.assertEqual(wearer.items_weight, before)
 
-    def test_we_13_both_outcomes_return_a_message(self):
-        """WE-13"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        helmet = self._held(wearer, Helmet)
-        _, said = wearer.wear(helmet)
-        self.assertTrue(said)
-        _, refused = wearer.wear(helmet)
-        self.assertTrue(refused)
-
-    # --- resolving a string ------------------------------------------------
-
-    def _named(self, wearer, typeclass, key):
-        """Create a wearable in contents under a key of the test's choosing.
-
-        The `_held` helper keys everything after its typeclass, which is fine
-        while items are told apart by type. These cases tell them apart by
-        name, so the name is the thing under test.
-        """
-        from evennia import create_object
-
-        return create_object(typeclass, key=key, location=wearer, nohome=True)
-
-    def test_we_14_a_string_naming_a_carried_item_wears_it(self):
-        """WE-14"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        helmet = self._named(wearer, Helmet, "iron helmet")
-        worn, _ = wearer.wear("iron helmet")
-        self.assertTrue(worn)
-        self.assertIs(wearer.worn_items["HEAD"], helmet)
-
-    def test_we_15_matching_ignores_case(self):
-        """WE-15"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        helmet = self._named(wearer, Helmet, "iron helmet")
-        worn, _ = wearer.wear("IRON HELMET")
-        self.assertTrue(worn)
-        self.assertIs(wearer.worn_items["HEAD"], helmet)
-
-    def test_we_16_a_substring_of_the_key_matches(self):
-        """WE-16"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        helmet = self._named(wearer, Helmet, "slaying helm of mega doom")
-        worn, _ = wearer.wear("doom")
-        self.assertTrue(worn)
-        self.assertIs(wearer.worn_items["HEAD"], helmet)
-
-    def test_we_17_a_string_matching_nothing_is_refused_as_not_carried(self):
-        """WE-17"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        self._named(wearer, Helmet, "iron helmet")
-        worn, message = wearer.wear("boots")
-        self.assertFalse(worn)
-        self.assertIn("boots", message)
-
-    def test_we_18_a_string_matching_only_a_worn_item_says_already_worn(self):
-        """WE-18"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        self._named(wearer, Helmet, "iron helmet")
-        wearer.wear("iron helmet")
-        worn, message = wearer.wear("iron helmet")
-        self.assertFalse(worn)
-        # The refusal has to say which of the two things went wrong. "Not
-        # carrying it" is both false and useless to someone wearing it.
-        self.assertIn("already", message.lower())
-
-    def test_we_19_of_several_matches_sharing_a_key_the_first_is_worn(self):
-        """WE-19"""
-        from tests.game_typeclasses import Ring
-
-        wearer = self._wearer()
-        first = self._named(wearer, Ring, "iron ring")
-        self._named(wearer, Ring, "iron ring")
-        worn, _ = wearer.wear("ring")
-        self.assertTrue(worn)
-        self.assertIs(wearer.worn_items["LEFT_HAND"], first)
-
-    def test_we_20_matches_with_differing_keys_are_refused_with_the_typed_word(self):
-        """WE-20"""
-        from tests.game_typeclasses import Helmet, Ring
-
-        wearer = self._wearer()
-        self._named(wearer, Helmet, "iron helmet")
-        self._named(wearer, Ring, "iron ring")
-        worn, message = wearer.wear("iron")
-        self.assertFalse(worn)
-        # A question, not a refusal. Asserting only that it failed and named
-        # the word would pass on "you are not carrying iron", which is the
-        # wrong answer arrived at by not looking.
-        self.assertIn("which", message.lower())
-        self.assertIn("iron", message)
-        self.assertEqual(wearer.get_all_worn(), [])
-
-    def test_we_21_a_carried_item_wins_over_a_worn_one(self):
-        """WE-21"""
-        from tests.game_typeclasses import Ring
-
-        wearer = self._wearer()
-        first = self._named(wearer, Ring, "iron ring")
-        second = self._named(wearer, Ring, "iron ring")
-        wearer.wear(first)
-        worn, _ = wearer.wear("ring")
-        self.assertTrue(worn)
-        self.assertIs(wearer.worn_items["RIGHT_HAND"], second)
-
-    def test_we_22_an_object_is_worn_without_being_resolved(self):
-        """WE-22"""
-        from tests.game_typeclasses import Ring
-
-        wearer = self._wearer()
-        self._named(wearer, Ring, "iron ring")
-        second = self._named(wearer, Ring, "iron ring")
-        # Two items one string could not tell apart. Resolving would take the
-        # first; an object path takes the one it was handed.
-        worn, _ = wearer.wear(second)
-        self.assertTrue(worn)
-        self.assertIs(wearer.worn_items["LEFT_HAND"], second)
-
     # --- naming a slot -----------------------------------------------------
 
     def test_we_23_a_named_slot_is_chosen_over_an_earlier_free_group(self):
         """WE-23"""
         from tests.game_typeclasses import Ring
+        from tests.slot_enums import WearSlot
 
         wearer = self._wearer()
         ring = self._held(wearer, Ring)
         # Both hands free, and LEFT_HAND is declared first. Naming the right
         # one has to beat the item author's preference or the argument does
         # nothing an implementation that merely checks the slot wouldn't.
-        worn, _ = wearer.wear(ring, slot="RIGHT_HAND")
-        self.assertTrue(worn)
+        wearer.wear(ring, slot=WearSlot.RIGHT_HAND)
         self.assertIs(wearer.worn_items["RIGHT_HAND"], ring)
         self.assertIsNone(wearer.worn_items["LEFT_HAND"])
 
     def test_we_24_naming_one_slot_of_a_group_fills_the_whole_group(self):
         """WE-24"""
         from tests.game_typeclasses import Greatsword
-
-        wearer = self._wearer()
-        sword = self._held(wearer, Greatsword)
-        worn, _ = wearer.wear(sword, slot="RIGHT_HAND")
-        self.assertTrue(worn)
-        self.assertIs(wearer.worn_items["RIGHT_HAND"], sword)
-        self.assertIs(wearer.worn_items["LEFT_HAND"], sword)
-
-    def test_we_25_a_named_slot_the_item_does_not_declare_is_refused(self):
-        """WE-25"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        helmet = self._held(wearer, Helmet)
-        worn, message = wearer.wear(helmet, slot="LEFT_HAND")
-        self.assertFalse(worn)
-        self.assertIn("LEFT_HAND", message)
-        self.assertIsNone(wearer.worn_items["LEFT_HAND"])
-        self.assertIsNone(wearer.worn_items["HEAD"])
-
-    def test_we_26_a_named_slot_this_wearer_does_not_have_is_refused(self):
-        """WE-26"""
-        from tests.game_typeclasses import Collar
-
-        wearer = self._wearer()
-        collar = self._held(wearer, Collar)
-        worn, message = wearer.wear(collar, slot="DOG_NECK")
-        self.assertFalse(worn)
-        # The item declares DOG_NECK; this wearer has no such place. A player
-        # naming a slot their body does not have needs to hear that, not that
-        # the collar cannot go there.
-        self.assertIn("DOG_NECK", message)
-        self.assertIn("have no", message.lower())
-
-    def test_we_27_a_named_slot_already_occupied_is_refused(self):
-        """WE-27"""
-        from tests.game_typeclasses import Ring
-
-        wearer = self._wearer()
-        first, second = self._held(wearer, Ring), self._held(wearer, Ring)
-        wearer.wear(first)
-        worn, message = wearer.wear(second, slot="LEFT_HAND")
-        self.assertFalse(worn)
-        self.assertTrue(message)
-        # The free right hand is not a substitute — a named slot is a demand,
-        # not a preference.
-        self.assertIs(wearer.worn_items["LEFT_HAND"], first)
-        self.assertIsNone(wearer.worn_items["RIGHT_HAND"])
-
-    def test_we_28_a_slot_named_as_an_enum_member_works(self):
-        """WE-28"""
-        from tests.game_typeclasses import Ring
         from tests.slot_enums import WearSlot
 
         wearer = self._wearer()
-        ring = self._held(wearer, Ring)
-        worn, _ = wearer.wear(ring, slot=WearSlot.RIGHT_HAND)
-        self.assertTrue(worn)
-        self.assertIs(wearer.worn_items["RIGHT_HAND"], ring)
-
-    def test_we_29_a_slot_can_be_named_while_the_item_is_a_string(self):
-        """WE-29"""
-        from tests.game_typeclasses import Ring
-
-        wearer = self._wearer()
-        ring = self._named(wearer, Ring, "iron ring")
-        worn, _ = wearer.wear("iron ring", slot="RIGHT_HAND")
-        self.assertTrue(worn)
-        self.assertIs(wearer.worn_items["RIGHT_HAND"], ring)
+        sword = self._held(wearer, Greatsword)
+        wearer.wear(sword, slot=WearSlot.RIGHT_HAND)
+        self.assertIs(wearer.worn_items["RIGHT_HAND"], sword)
+        self.assertIs(wearer.worn_items["LEFT_HAND"], sword)
 
     # --- the hooks ---------------------------------------------------------
 
@@ -792,8 +565,7 @@ class WearTests(DjangoTestCase):
 
         wearer = self._wearer(UnwearableHumanoid)
         helmet = self._held(wearer, Helmet)
-        _, message = wearer.wear(helmet)
-        self.assertEqual(message, f"{helmet} will not go on.")
+        self.assertEqual(wearer.wear(helmet), (False, f"{helmet} will not go on."))
 
     def test_we_33_at_post_wear_sees_the_slots_already_filled(self):
         """WE-33"""
@@ -848,6 +620,119 @@ class WearTests(DjangoTestCase):
         self.assertEqual(len(wearer.ndb.wear_calls), 1)
         self.assertIs(wearer.ndb.wear_calls[0][0], helmet)
 
+    # --- where it would go -------------------------------------------------
+
+    def test_we_37_slots_for_returns_the_group_wear_fills(self):
+        """WE-37"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        ring = self._held(wearer, Ring)
+        before = dict(wearer.worn_items)
+
+        answer = wearer.slots_for(ring)
+
+        # Asking changes nothing, so a command may ask and then stop.
+        self.assertEqual(dict(wearer.worn_items), before)
+        wearer.wear(ring)
+        self.assertEqual(
+            answer, tuple(name for name, held in wearer.worn_items.items() if held is ring)
+        )
+
+    def test_we_38_slots_for_is_none_for_an_item_declaring_no_slots(self):
+        """WE-38"""
+        from tests.game_typeclasses import WearableThing
+
+        wearer = self._wearer()
+        self.assertIsNone(wearer.slots_for(self._held(wearer, WearableThing)))
+
+    def test_we_39_slots_for_is_none_when_no_group_is_free(self):
+        """WE-39"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        first, second = self._held(wearer, Helmet), self._held(wearer, Helmet)
+        wearer.wear(first)
+        self.assertIsNone(wearer.slots_for(second))
+
+    def test_we_40_slots_for_is_none_for_a_slot_the_item_does_not_declare(self):
+        """WE-40"""
+        from tests.game_typeclasses import Helmet
+        from tests.slot_enums import WearSlot
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, Helmet)
+        self.assertIsNone(wearer.slots_for(helmet, slot=WearSlot.LEFT_HAND))
+
+    def test_we_41_slots_for_is_none_for_a_slot_this_wearer_does_not_have(self):
+        """WE-41"""
+        from tests.game_typeclasses import Collar
+        from tests.slot_enums import WearSlot
+
+        wearer = self._wearer()
+        collar = self._held(wearer, Collar)
+        # The collar declares DOG_NECK; a humanoid has no such place.
+        self.assertIsNone(wearer.slots_for(collar, slot=WearSlot.DOG_NECK))
+
+    def test_we_42_slots_for_is_none_when_a_named_group_is_partly_occupied(self):
+        """WE-42"""
+        from tests.game_typeclasses import Greatsword, Ring
+        from tests.slot_enums import WearSlot
+
+        wearer = self._wearer()
+        wearer.wear(self._held(wearer, Ring))
+        sword = self._held(wearer, Greatsword)
+        # The right hand is free; the left, which the sword also needs, is not.
+        self.assertIsNone(wearer.slots_for(sword, slot=WearSlot.RIGHT_HAND))
+
+    # --- caller bugs raise -------------------------------------------------
+
+    def test_we_43_wearing_an_item_not_in_contents_raises(self):
+        """WE-43"""
+        from evennia import create_object
+        from tests.game_typeclasses import Helmet, WatchfulHumanoid
+
+        wearer = self._wearer(WatchfulHumanoid)
+        loose = create_object(Helmet, key="helmet", nohome=True)
+        with self.assertRaises(ValueError):
+            wearer.wear(loose)
+        self.assertIsNone(wearer.worn_items["HEAD"])
+        self.assertIsNone(wearer.ndb.wear_calls)
+
+    def test_we_44_wearing_an_item_already_worn_raises(self):
+        """WE-44"""
+        from tests.game_typeclasses import Ring, WatchfulHumanoid
+
+        wearer = self._wearer(WatchfulHumanoid)
+        ring = self._held(wearer, Ring)
+        wearer.wear(ring)
+        wearer.ndb.wear_calls = None
+        # The right hand is free, so without the guard the ring goes on both.
+        with self.assertRaises(ValueError):
+            wearer.wear(ring)
+        self.assertIsNone(wearer.worn_items["RIGHT_HAND"])
+        self.assertIsNone(wearer.ndb.wear_calls)
+
+    def test_we_45_wearing_with_no_free_group_raises(self):
+        """WE-45"""
+        from tests.game_typeclasses import Helmet, WatchfulHumanoid
+
+        wearer = self._wearer(WatchfulHumanoid)
+        first, second = self._held(wearer, Helmet), self._held(wearer, Helmet)
+        wearer.wear(first)
+        wearer.ndb.wear_calls = None
+        with self.assertRaises(ValueError):
+            wearer.wear(second)
+        self.assertIs(wearer.worn_items["HEAD"], first)
+        self.assertIsNone(wearer.ndb.wear_calls)
+
+    def test_we_47_wearing_that_goes_through_returns_true_and_no_reason(self):
+        """WE-47"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self.assertEqual(wearer.wear(self._held(wearer, Helmet)), (True, ""))
+
 
 class RemoveTests(DjangoTestCase):
     """RM — freeing the slots an item occupies."""
@@ -875,8 +760,7 @@ class RemoveTests(DjangoTestCase):
 
         wearer = self._wearer()
         helmet = self._worn(wearer, Helmet)
-        came_off, _ = wearer.remove(helmet)
-        self.assertTrue(came_off)
+        wearer.remove(helmet)
         self.assertIsNone(wearer.worn_items["HEAD"])
 
     def test_rm_02_removing_frees_every_slot_it_occupied(self):
@@ -888,16 +772,6 @@ class RemoveTests(DjangoTestCase):
         wearer.remove(sword)
         self.assertIsNone(wearer.worn_items["LEFT_HAND"])
         self.assertIsNone(wearer.worn_items["RIGHT_HAND"])
-
-    def test_rm_03_removing_something_not_worn_is_refused(self):
-        """RM-03"""
-        from evennia import create_object
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        carried = create_object(Helmet, key="helmet", location=wearer, nohome=True)
-        came_off, _ = wearer.remove(carried)
-        self.assertFalse(came_off)
 
     def test_rm_04_removing_leaves_the_item_in_contents(self):
         """RM-04"""
@@ -940,49 +814,6 @@ class RemoveTests(DjangoTestCase):
         self.assertTrue(worn)
         self.assertIs(wearer.worn_items["HEAD"], helmet)
 
-    def test_rm_10_the_hook_allows_removal_by_default(self):
-        """RM-10"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        allowed, _ = wearer.at_pre_remove(self._worn(wearer, Helmet))
-        self.assertTrue(allowed)
-
-    def test_rm_11_a_consumer_refusing_stops_the_removal(self):
-        """RM-11"""
-        from evennia import create_object
-        from tests.game_typeclasses import CursedHumanoid, Helmet
-
-        wearer = create_object(CursedHumanoid, key="cursed", nohome=True)
-        helmet = create_object(Helmet, key="helmet", location=wearer, nohome=True)
-        wearer.wear(helmet)
-        came_off, _ = wearer.remove(helmet)
-        self.assertFalse(came_off)
-        self.assertTrue(wearer.is_worn(helmet))
-
-    def test_rm_12_the_consumers_reason_is_returned(self):
-        """RM-12"""
-        from evennia import create_object
-        from tests.game_typeclasses import CursedHumanoid, Helmet
-
-        wearer = create_object(CursedHumanoid, key="cursed", nohome=True)
-        helmet = create_object(Helmet, key="helmet", location=wearer, nohome=True)
-        wearer.wear(helmet)
-        _, said = wearer.remove(helmet)
-        self.assertIn("will not come off", said)
-
-    def test_rm_13_the_slots_are_untouched_when_removal_is_refused(self):
-        """RM-13"""
-        from evennia import create_object
-        from tests.game_typeclasses import CursedHumanoid, Greatsword
-
-        wearer = create_object(CursedHumanoid, key="cursed", nohome=True)
-        sword = create_object(Greatsword, key="sword", location=wearer, nohome=True)
-        wearer.wear(sword)
-        wearer.remove(sword)
-        self.assertIs(wearer.worn_items["LEFT_HAND"], sword)
-        self.assertIs(wearer.worn_items["RIGHT_HAND"], sword)
-
     def test_rm_09_removing_one_of_two_identical_items_frees_only_that_one(self):
         """RM-09"""
         from tests.game_typeclasses import TwinRing
@@ -994,245 +825,13 @@ class RemoveTests(DjangoTestCase):
         self.assertIsNone(wearer.worn_items["LEFT_HAND"])
         self.assertIs(wearer.worn_items["RIGHT_HAND"], second)
 
-    def test_rm_08_both_outcomes_return_a_message(self):
-        """RM-08"""
+    def test_rm_10_the_hook_allows_removal_by_default(self):
+        """RM-10"""
         from tests.game_typeclasses import Helmet
 
         wearer = self._wearer()
-        helmet = self._worn(wearer, Helmet)
-        _, said = wearer.remove(helmet)
-        self.assertTrue(said)
-        _, refused = wearer.remove(helmet)
-        self.assertTrue(refused)
-
-    # --- resolving a string ------------------------------------------------
-
-    def _named(self, wearer, typeclass, key, wear=True):
-        """Create a wearable under a key of the test's choosing.
-
-        The `_worn` helper keys everything after its typeclass, which is fine
-        while items are told apart by type. These cases tell them apart by
-        name, so the name is the thing under test.
-        """
-        from evennia import create_object
-
-        item = create_object(typeclass, key=key, location=wearer, nohome=True)
-        if wear:
-            wearer.wear(item)
-        return item
-
-    def test_rm_14_a_string_naming_a_worn_item_removes_it(self):
-        """RM-14"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        self._named(wearer, Helmet, "iron helmet")
-        removed, _ = wearer.remove("iron helmet")
-        self.assertTrue(removed)
-        self.assertIsNone(wearer.worn_items["HEAD"])
-
-    def test_rm_15_matching_ignores_case(self):
-        """RM-15"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        self._named(wearer, Helmet, "iron helmet")
-        removed, _ = wearer.remove("IRON HELMET")
-        self.assertTrue(removed)
-        self.assertIsNone(wearer.worn_items["HEAD"])
-
-    def test_rm_16_a_substring_of_the_key_matches(self):
-        """RM-16"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        self._named(wearer, Helmet, "slaying helm of mega doom")
-        removed, _ = wearer.remove("doom")
-        self.assertTrue(removed)
-        self.assertIsNone(wearer.worn_items["HEAD"])
-
-    def test_rm_17_a_string_matching_nothing_is_refused(self):
-        """RM-17"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        self._named(wearer, Helmet, "iron helmet")
-        removed, message = wearer.remove("boots")
-        self.assertFalse(removed)
-        self.assertIn("boots", message)
-        # "Not carrying" and "not wearing" are different answers, and this is
-        # the one that has nothing at all. RM-18 is the other.
-        self.assertIn("not carrying", message.lower())
-
-    def test_rm_18_a_string_matching_only_a_carried_item_says_not_worn(self):
-        """RM-18"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        self._named(wearer, Helmet, "iron helmet", wear=False)
-        removed, message = wearer.remove("iron")
-        self.assertFalse(removed)
-        # Searching only the worn items would say they are not carrying it,
-        # when the useful answer is that they have it and are not wearing it.
-        self.assertIn("not wearing", message.lower())
-        # Names the item it found, not the word that was typed — which is the
-        # only proof the second pass ran.
-        self.assertIn("helmet", message.lower())
-
-    def test_rm_19_of_several_matches_sharing_a_key_the_first_is_removed(self):
-        """RM-19"""
-        from tests.game_typeclasses import Ring
-
-        wearer = self._wearer()
-        first = self._named(wearer, Ring, "iron ring")
-        second = self._named(wearer, Ring, "iron ring")
-        removed, _ = wearer.remove("ring")
-        self.assertTrue(removed)
-        self.assertIsNone(wearer.worn_items["LEFT_HAND"])
-        self.assertIs(wearer.worn_items["RIGHT_HAND"], second)
-        self.assertFalse(wearer.is_worn(first))
-
-    def test_rm_20_matches_with_differing_keys_are_refused_with_the_typed_word(self):
-        """RM-20"""
-        from tests.game_typeclasses import Helmet, Ring
-
-        wearer = self._wearer()
-        self._named(wearer, Helmet, "iron helmet")
-        self._named(wearer, Ring, "iron ring")
-        removed, message = wearer.remove("iron")
-        self.assertFalse(removed)
-        # A question, not a refusal. Asserting only that it failed and named
-        # the word would pass on "you are not wearing iron", which is the
-        # wrong answer arrived at by not looking.
-        self.assertIn("which", message.lower())
-        self.assertIn("iron", message)
-        self.assertEqual(len(wearer.get_all_worn()), 2)
-
-    def test_rm_21_a_worn_item_wins_over_a_carried_one(self):
-        """RM-21"""
-        from tests.game_typeclasses import Ring
-
-        wearer = self._wearer()
-        worn = self._named(wearer, Ring, "iron ring")
-        carried = self._named(wearer, Ring, "iron ring", wear=False)
-        removed, _ = wearer.remove("ring")
-        self.assertTrue(removed)
-        self.assertFalse(wearer.is_worn(worn))
-        self.assertIn(carried, wearer.get_carried())
-
-    def test_rm_22_an_object_is_removed_without_being_resolved(self):
-        """RM-22"""
-        from tests.game_typeclasses import Ring
-
-        wearer = self._wearer()
-        self._named(wearer, Ring, "iron ring")
-        second = self._named(wearer, Ring, "iron ring")
-        # Two items one string could not tell apart. Resolving would take the
-        # first; an object path takes the one it was handed.
-        removed, _ = wearer.remove(second)
-        self.assertTrue(removed)
-        self.assertIsNone(wearer.worn_items["RIGHT_HAND"])
-
-    # --- naming a slot -----------------------------------------------------
-
-    def test_rm_23_a_named_slot_alone_removes_what_is_in_it(self):
-        """RM-23"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        helmet = self._worn(wearer, Helmet)
-        removed, _ = wearer.remove(slot="HEAD")
-        self.assertTrue(removed)
-        self.assertIsNone(wearer.worn_items["HEAD"])
-        self.assertIn(helmet, wearer.get_carried())
-
-    def test_rm_24_naming_one_slot_frees_every_slot_it_occupied(self):
-        """RM-24"""
-        from tests.game_typeclasses import Greatsword
-
-        wearer = self._wearer()
-        self._worn(wearer, Greatsword)
-        removed, _ = wearer.remove(slot="RIGHT_HAND")
-        self.assertTrue(removed)
-        self.assertIsNone(wearer.worn_items["RIGHT_HAND"])
-        self.assertIsNone(wearer.worn_items["LEFT_HAND"])
-
-    def test_rm_25_a_named_slot_this_wearer_does_not_have_is_refused(self):
-        """RM-25"""
-        wearer = self._wearer()
-        removed, message = wearer.remove(slot="DOG_NECK")
-        self.assertFalse(removed)
-        self.assertIn("DOG_NECK", message)
-        self.assertIn("have no", message.lower())
-
-    def test_rm_26_a_named_slot_holding_nothing_is_refused(self):
-        """RM-26"""
-        wearer = self._wearer()
-        removed, message = wearer.remove(slot="HEAD")
-        self.assertFalse(removed)
-        # Different from having no such slot: this one exists and is empty,
-        # and only that answer invites the player to look again.
-        self.assertIn("nothing", message.lower())
-        self.assertIn("HEAD", message)
-
-    def test_rm_27_an_item_and_a_slot_remove_that_item_from_that_slot(self):
-        """RM-27"""
-        from tests.game_typeclasses import Ring
-
-        wearer = self._wearer()
-        ring = self._named(wearer, Ring, "iron ring")
-        removed, _ = wearer.remove("iron ring", slot="LEFT_HAND")
-        self.assertTrue(removed)
-        self.assertFalse(wearer.is_worn(ring))
-
-    def test_rm_28_an_item_worn_elsewhere_than_the_named_slot_is_refused(self):
-        """RM-28"""
-        from tests.game_typeclasses import Ring
-
-        wearer = self._wearer()
-        ring = self._named(wearer, Ring, "iron ring")
-        # Worn on the left; the right was named.
-        removed, message = wearer.remove("iron ring", slot="RIGHT_HAND")
-        self.assertFalse(removed)
-        self.assertTrue(message)
-        self.assertIs(wearer.worn_items["LEFT_HAND"], ring)
-
-    def test_rm_29_of_two_items_sharing_a_key_the_one_in_the_slot_is_removed(self):
-        """RM-29"""
-        from tests.game_typeclasses import Ring
-
-        wearer = self._wearer()
-        left = self._named(wearer, Ring, "iron ring")
-        right = self._named(wearer, Ring, "iron ring")
-        # Same key, one on each hand. "Which ring do you mean?" has no answer
-        # a player could give, so the slot is the only way to say.
-        removed, _ = wearer.remove("iron ring", slot="RIGHT_HAND")
-        self.assertTrue(removed)
-        self.assertFalse(wearer.is_worn(right))
-        self.assertIs(wearer.worn_items["LEFT_HAND"], left)
-
-    def test_rm_30_a_slot_named_as_an_enum_member_works(self):
-        """RM-30"""
-        from tests.game_typeclasses import Helmet
-        from tests.slot_enums import WearSlot
-
-        wearer = self._wearer()
-        self._worn(wearer, Helmet)
-        removed, _ = wearer.remove(slot=WearSlot.HEAD)
-        self.assertTrue(removed)
-        self.assertIsNone(wearer.worn_items["HEAD"])
-
-    def test_rm_31_neither_an_item_nor_a_slot_is_refused(self):
-        """RM-31"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        helmet = self._worn(wearer, Helmet)
-        removed, message = wearer.remove()
-        self.assertFalse(removed)
-        self.assertTrue(message)
-        # A command that failed to parse must not strip anything by default.
-        self.assertIs(wearer.worn_items["HEAD"], helmet)
+        allowed, _ = wearer.at_pre_remove(self._worn(wearer, Helmet))
+        self.assertTrue(allowed)
 
     # --- the post hook -----------------------------------------------------
 
@@ -1263,6 +862,60 @@ class RemoveTests(DjangoTestCase):
         # where it sat exists nowhere else.
         self.assertEqual(set(slots), {"LEFT_HAND", "RIGHT_HAND"})
 
+    # --- deciding is the caller's -------------------------------------------
+
+    def test_rm_35_removing_an_item_not_worn_raises(self):
+        """RM-35"""
+        from evennia import create_object
+        from tests.game_typeclasses import Helmet, Ring, WatchfulHumanoid
+
+        wearer = create_object(WatchfulHumanoid, key="wearer", nohome=True)
+        ring = create_object(Ring, key="ring", location=wearer, nohome=True)
+        wearer.wear(ring)
+        carried = create_object(Helmet, key="helmet", location=wearer, nohome=True)
+        before = dict(wearer.worn_items)
+
+        with self.assertRaises(ValueError):
+            wearer.remove(carried)
+
+        self.assertEqual(dict(wearer.worn_items), before)
+        # Firing would tell the consumer to undo a bonus never applied.
+        self.assertIsNone(wearer.ndb.remove_calls)
+
+    def test_rm_11_a_consumer_refusing_stops_the_removal(self):
+        """RM-11"""
+        from evennia import create_object
+        from tests.game_typeclasses import CursedHumanoid, Helmet
+
+        wearer = create_object(CursedHumanoid, key="cursed", nohome=True)
+        helmet = create_object(Helmet, key="helmet", location=wearer, nohome=True)
+        wearer.wear(helmet)
+        removed, _ = wearer.remove(helmet)
+        self.assertFalse(removed)
+        self.assertTrue(wearer.is_worn(helmet))
+
+    def test_rm_12_the_consumers_reason_is_returned(self):
+        """RM-12"""
+        from evennia import create_object
+        from tests.game_typeclasses import CursedHumanoid, Helmet
+
+        wearer = create_object(CursedHumanoid, key="cursed", nohome=True)
+        helmet = create_object(Helmet, key="helmet", location=wearer, nohome=True)
+        wearer.wear(helmet)
+        self.assertEqual(wearer.remove(helmet), (False, f"{helmet} will not come off."))
+
+    def test_rm_13_the_slots_are_untouched_when_removal_is_refused(self):
+        """RM-13"""
+        from evennia import create_object
+        from tests.game_typeclasses import CursedHumanoid, Greatsword
+
+        wearer = create_object(CursedHumanoid, key="cursed", nohome=True)
+        sword = create_object(Greatsword, key="sword", location=wearer, nohome=True)
+        wearer.wear(sword)
+        wearer.remove(sword)
+        self.assertIs(wearer.worn_items["LEFT_HAND"], sword)
+        self.assertIs(wearer.worn_items["RIGHT_HAND"], sword)
+
     def test_rm_34_at_post_remove_does_not_fire_when_refused(self):
         """RM-34"""
         from evennia import create_object
@@ -1275,6 +928,14 @@ class RemoveTests(DjangoTestCase):
         # Firing anyway would strip a ring's bonus from someone still wearing
         # it.
         self.assertIsNone(wearer.ndb.remove_calls)
+
+    def test_rm_37_a_removal_that_goes_through_returns_true_and_no_reason(self):
+        """RM-37"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._worn(wearer, Helmet)
+        self.assertEqual(wearer.remove(helmet), (True, ""))
 
 
 class IdentityTests(DjangoTestCase):
@@ -1471,7 +1132,7 @@ class RestoreWornTests(DjangoTestCase):
         self.assertFalse(wearer.is_worn(stranger))
         self.assertIn(stranger, wearer.get_carried())
 
-    def test_rw_03_an_item_already_worn_returns_wears_refusal(self):
+    def test_rw_03_an_item_already_worn_is_refused(self):
         """RW-03"""
         wearer, _ = self._dressed()
         outcomes = wearer.restore_worn()
@@ -1479,7 +1140,7 @@ class RestoreWornTests(DjangoTestCase):
         self.assertFalse(any(worn for worn, _ in outcomes))
         self.assertIn("already wearing", outcomes[0][1])
 
-    def test_rw_04_an_item_that_cannot_be_worn_returns_wears_refusal(self):
+    def test_rw_04_an_item_with_nowhere_to_go_is_refused(self):
         """RW-04"""
         from tests.game_typeclasses import Humanoid
         from tests.slot_enums import WearSlot
@@ -1491,6 +1152,7 @@ class RestoreWornTests(DjangoTestCase):
             wearer.at_init()
             outcomes = wearer.restore_worn()
         self.assertFalse(any(worn for worn, _ in outcomes))
+        self.assertIn("nowhere to wear", outcomes[0][1])
         self.assertIn(helmet, wearer.get_carried())
 
     def test_rw_06_an_item_that_is_not_wearable_is_passed_over(self):
@@ -1528,6 +1190,24 @@ class RestoreWornTests(DjangoTestCase):
         with mock.patch("evennia_equipment.wearslots.equipment_log") as logged:
             wearer.restore_worn()
         logged.assert_not_called()
+
+    def test_rw_09_an_at_pre_wear_refusal_is_returned(self):
+        """RW-09"""
+        from evennia import create_object
+        from tests.game_typeclasses import IdentifiedHelmet, UnwearableHumanoid
+
+        # Recorded as worn, and now refused by the wearer's hook — a
+        # restriction that changed since the record was written.
+        wearer = create_object(UnwearableHumanoid, key="wearer", nohome=True)
+        helmet = create_object(
+            IdentifiedHelmet, key="helmet", location=wearer, nohome=True
+        )
+        wearer.worn_equipment_record = {helmet.wearslot_identity}
+
+        outcomes = wearer.restore_worn()
+
+        self.assertEqual(outcomes, [(False, f"{helmet} will not go on.")])
+        self.assertIn(helmet, wearer.get_carried())
 
 
 class WornAndCarriedTests(DjangoTestCase):
@@ -1789,6 +1469,305 @@ class TargetingFilterTests(DjangoTestCase):
         wearer = self._wearer()
         helmet = self._held(wearer, IdentifiedHelmet)
         self.assertFalse(f_identity_in(set())(helmet, wearer))
+
+
+class _FinderTest(DjangoTestCase):
+    """A humanoid wearer and items made under the key a case chooses."""
+
+    def _wearer(self):
+        from evennia import create_object
+        from tests.game_typeclasses import Humanoid
+
+        return create_object(Humanoid, key="wearer", nohome=True)
+
+    def _held(self, wearer, typeclass, key, aliases=None, wear=False):
+        from evennia import create_object
+
+        item = create_object(
+            typeclass, key=key, location=wearer, aliases=aliases, nohome=True
+        )
+        if wear:
+            wearer.wear(item)
+        return item
+
+
+class FindCarriedTests(_FinderTest):
+    """FC — finding something carried."""
+
+    def test_fc_01_a_name_matching_one_carried_item_returns_it(self):
+        """FC-01"""
+        from evennia_equipment.finders import find_carried
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, Helmet, "iron helmet")
+        self.assertEqual(find_carried(wearer, "iron helmet"), (helmet, None))
+
+    def test_fc_02_a_worn_item_is_never_returned(self):
+        """FC-02"""
+        from evennia_equipment.finders import find_carried
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._held(wearer, Helmet, "iron helmet", wear=True)
+        item, _ = find_carried(wearer, "iron helmet")
+        self.assertIsNone(item)
+
+    def test_fc_03_a_name_matches_through_caller_search(self):
+        """FC-03"""
+        from evennia_equipment.finders import find_carried
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, Helmet, "iron helmet", aliases=["lid"])
+        # An alias, in another case: Evennia's matching, not a key filter's.
+        self.assertEqual(find_carried(wearer, "LID"), (helmet, None))
+
+    def test_fc_04_several_sharing_a_key_return_the_first(self):
+        """FC-04"""
+        from evennia_equipment.finders import find_carried
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        first = self._held(wearer, Ring, "iron ring")
+        self._held(wearer, Ring, "iron ring")
+        self.assertEqual(find_carried(wearer, "iron ring"), (first, None))
+
+    def test_fc_05_differing_keys_are_refused_asking_which(self):
+        """FC-05"""
+        from evennia_equipment.finders import find_carried
+        from tests.game_typeclasses import Helmet, Ring
+
+        wearer = self._wearer()
+        self._held(wearer, Helmet, "iron helmet")
+        self._held(wearer, Ring, "iron ring")
+        item, refusal = find_carried(wearer, "iron")
+        self.assertIsNone(item)
+        self.assertIn("which", refusal.lower())
+        self.assertIn("iron", refusal)
+
+    def test_fc_06_a_numbered_name_returns_that_one(self):
+        """FC-06"""
+        from evennia_equipment.finders import find_carried
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        self._held(wearer, Ring, "iron ring")
+        second = self._held(wearer, Ring, "iron ring")
+        self.assertEqual(find_carried(wearer, "iron ring-2"), (second, None))
+
+    def test_fc_07_a_name_matching_only_a_worn_item_says_it_is_worn(self):
+        """FC-07"""
+        from evennia_equipment.finders import find_carried
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, Helmet, "iron helmet", wear=True)
+        item, refusal = find_carried(wearer, "helmet")
+        self.assertIsNone(item)
+        self.assertIn("wearing", refusal.lower())
+        # The item found, not the word typed — the proof the worn items were
+        # looked at.
+        self.assertIn(str(helmet), refusal)
+
+    def test_fc_08_a_name_matching_nothing_is_refused(self):
+        """FC-08"""
+        from evennia_equipment.finders import find_carried
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._held(wearer, Helmet, "iron helmet")
+        item, refusal = find_carried(wearer, "boots")
+        self.assertIsNone(item)
+        self.assertIn("not carrying", refusal.lower())
+        self.assertIn("boots", refusal)
+
+    def test_fc_09_empty_text_is_refused(self):
+        """FC-09"""
+        from evennia_equipment.finders import find_carried
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._held(wearer, Helmet, "iron helmet")
+        item, refusal = find_carried(wearer, "  ")
+        self.assertIsNone(item)
+        self.assertTrue(refusal)
+
+    def test_fc_10_nothing_is_sent_to_the_caller(self):
+        """FC-10"""
+        from evennia_equipment.finders import find_carried
+        from tests.game_typeclasses import Helmet, Humanoid
+
+        wearer = self._wearer()
+        self._held(wearer, Helmet, "iron helmet")
+        with mock.patch.object(Humanoid, "msg") as sent:
+            find_carried(wearer, "iron helmet")
+            find_carried(wearer, "boots")
+        sent.assert_not_called()
+
+
+    def test_fc_11_a_dbref_of_something_not_carried_is_not_found(self):
+        """FC-11"""
+        from evennia import create_object
+        from evennia_equipment.finders import find_carried
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        # Who dbref searches are open to.
+        wearer.permissions.add("Builder")
+        elsewhere = create_object(Helmet, key="iron helmet", nohome=True)
+        item, _ = find_carried(wearer, f"#{elsewhere.id}")
+        self.assertIsNone(item)
+
+
+class FindWornTests(_FinderTest):
+    """FW — finding something worn."""
+
+    def test_fw_01_a_name_matching_one_worn_item_returns_it(self):
+        """FW-01"""
+        from evennia_equipment.finders import find_worn
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, Helmet, "iron helmet", wear=True)
+        self.assertEqual(find_worn(wearer, "iron helmet"), (helmet, None))
+
+    def test_fw_02_a_carried_item_is_never_returned(self):
+        """FW-02"""
+        from evennia_equipment.finders import find_worn
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._held(wearer, Helmet, "iron helmet")
+        item, _ = find_worn(wearer, "iron helmet")
+        self.assertIsNone(item)
+
+    def test_fw_03_several_sharing_a_key_return_the_first(self):
+        """FW-03"""
+        from evennia_equipment.finders import find_worn
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        first = self._held(wearer, Ring, "iron ring", wear=True)
+        self._held(wearer, Ring, "iron ring", wear=True)
+        self.assertEqual(find_worn(wearer, "iron ring"), (first, None))
+
+    def test_fw_04_differing_keys_are_refused_asking_which(self):
+        """FW-04"""
+        from evennia_equipment.finders import find_worn
+        from tests.game_typeclasses import Helmet, Ring
+
+        wearer = self._wearer()
+        self._held(wearer, Helmet, "iron helmet", wear=True)
+        self._held(wearer, Ring, "iron ring", wear=True)
+        item, refusal = find_worn(wearer, "iron")
+        self.assertIsNone(item)
+        self.assertIn("which", refusal.lower())
+        self.assertIn("iron", refusal)
+
+    def test_fw_05_a_numbered_name_returns_that_one(self):
+        """FW-05"""
+        from evennia_equipment.finders import find_worn
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        self._held(wearer, Ring, "iron ring", wear=True)
+        second = self._held(wearer, Ring, "iron ring", wear=True)
+        self.assertEqual(find_worn(wearer, "iron ring-2"), (second, None))
+
+    def test_fw_06_a_name_matching_only_a_carried_item_says_not_worn(self):
+        """FW-06"""
+        from evennia_equipment.finders import find_worn
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, Helmet, "iron helmet")
+        item, refusal = find_worn(wearer, "helmet")
+        self.assertIsNone(item)
+        self.assertIn("not wearing", refusal.lower())
+        self.assertIn(str(helmet), refusal)
+
+    def test_fw_07_a_name_matching_nothing_is_refused(self):
+        """FW-07"""
+        from evennia_equipment.finders import find_worn
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._held(wearer, Helmet, "iron helmet", wear=True)
+        item, refusal = find_worn(wearer, "boots")
+        self.assertIsNone(item)
+        self.assertIn("not carrying", refusal.lower())
+        self.assertIn("boots", refusal)
+
+    def test_fw_08_empty_text_is_refused(self):
+        """FW-08"""
+        from evennia_equipment.finders import find_worn
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._held(wearer, Helmet, "iron helmet", wear=True)
+        item, refusal = find_worn(wearer, "")
+        self.assertIsNone(item)
+        self.assertTrue(refusal)
+
+    def test_fw_09_nothing_is_sent_to_the_caller(self):
+        """FW-09"""
+        from evennia_equipment.finders import find_worn
+        from tests.game_typeclasses import Helmet, Humanoid
+
+        wearer = self._wearer()
+        self._held(wearer, Helmet, "iron helmet", wear=True)
+        with mock.patch.object(Humanoid, "msg") as sent:
+            find_worn(wearer, "iron helmet")
+            find_worn(wearer, "boots")
+        sent.assert_not_called()
+
+
+class MatchSlotTests(_FinderTest):
+    """MS — matching a typed slot name."""
+
+    def test_ms_01_case_and_separators_are_ignored_and_the_member_returned(self):
+        """MS-01"""
+        from evennia_equipment.finders import match_slot
+        from tests.slot_enums import WearSlot
+
+        self.assertEqual(
+            match_slot(self._wearer(), "Left-Hand"), (WearSlot.LEFT_HAND, None)
+        )
+
+    def test_ms_02_several_matches_are_refused_and_named(self):
+        """MS-02"""
+        from evennia_equipment.finders import match_slot
+
+        slot, refusal = match_slot(self._wearer(), "hand")
+        self.assertIsNone(slot)
+        self.assertIn("left hand", refusal)
+        self.assertIn("right hand", refusal)
+
+    def test_ms_03_text_matching_no_slot_is_refused(self):
+        """MS-03"""
+        from evennia_equipment.finders import match_slot
+
+        slot, refusal = match_slot(self._wearer(), "tail")
+        self.assertIsNone(slot)
+        self.assertIn("tail", refusal)
+
+    def test_ms_04_a_slot_this_caller_lacks_is_refused(self):
+        """MS-04"""
+        from evennia_equipment.finders import match_slot
+
+        # DOG_NECK is in the enum; a humanoid does not have it.
+        slot, refusal = match_slot(self._wearer(), "dog neck")
+        self.assertIsNone(slot)
+        self.assertIn("dog neck", refusal)
+
+    def test_ms_05_empty_text_is_refused(self):
+        """MS-05"""
+        from evennia_equipment.finders import match_slot
+
+        slot, refusal = match_slot(self._wearer(), " ")
+        self.assertIsNone(slot)
+        self.assertTrue(refusal)
 
 
 class CarriableTests(DjangoTestCase):
@@ -2470,52 +2449,132 @@ class ContainerTests(DjangoTestCase):
         self.assertIsNone(Container().at_init())
 
 
-class SlotMatchingTests(DjangoTestCase):
-    """SM — turning what a player typed into a slot this wearer has."""
+class ResolveWearTests(DjangoTestCase):
+    """UW — resolving what to wear."""
 
-    def _wearer(self, typeclass=None):
-        """Create one wearer. Not a test."""
+    def _wearer(self):
         from evennia import create_object
         from tests.game_typeclasses import Humanoid
 
-        return create_object(typeclass or Humanoid, key="wearer", nohome=True)
+        return create_object(Humanoid, key="wearer", nohome=True)
 
-    def test_sm_02_case_and_separators_are_ignored(self):
-        """SM-02"""
+    def _held(self, wearer, typeclass, key):
+        from evennia import create_object
+
+        return create_object(typeclass, key=key, location=wearer, nohome=True)
+
+    def test_uw_01_an_item_name_alone_returns_the_item_and_no_slot(self):
+        """UW-01"""
+        from tests.game_typeclasses import Helmet
+
         wearer = self._wearer()
-        for typed in ("left hand", "left_hand", "Left-Hand", "lefthand"):
-            with self.subTest(typed=typed):
-                # The real slot name comes back — only the real one can be
-                # passed to wear().
-                self.assertEqual(match_slot(wearer, typed), ("LEFT_HAND", None))
+        helmet = self._held(wearer, Helmet, "iron helmet")
+        self.assertEqual(resolve_wear(wearer, "iron helmet"), ((helmet, None), None))
 
-    def test_sm_05_several_matches_are_refused_and_named(self):
-        """SM-05"""
-        matched, refusal = match_slot(self._wearer(), "hand")
-        self.assertIsNone(matched)
-        self.assertIn("left hand", refusal.lower())
-        self.assertIn("right hand", refusal.lower())
+    def test_uw_02_an_item_on_a_slot_returns_both(self):
+        """UW-02"""
+        from tests.game_typeclasses import Ring
+        from tests.slot_enums import WearSlot
 
-    def test_sm_06_text_matching_no_slot_is_refused(self):
-        """SM-06"""
-        matched, refusal = match_slot(self._wearer(), "foot")
-        self.assertIsNone(matched)
-        self.assertIn("foot", refusal)
+        wearer = self._wearer()
+        ring = self._held(wearer, Ring, "iron ring")
+        self.assertEqual(
+            resolve_wear(wearer, "iron ring on right hand"),
+            ((ring, WearSlot.RIGHT_HAND), None),
+        )
 
-    def test_sm_07_a_slot_this_wearer_lacks_is_refused(self):
-        """SM-07"""
-        # DOG_NECK is in the enum, so a matcher reaching for valid_slot_names()
-        # would find it. A humanoid has no such place.
-        matched, _ = match_slot(self._wearer(), "dog neck")
-        self.assertIsNone(matched)
+    def test_uw_03_a_slot_matching_nothing_is_refused_with_match_slots_refusal(self):
+        """UW-03"""
+        from tests.game_typeclasses import Helmet
 
-    def test_sm_08_empty_text_is_refused(self):
-        """SM-08"""
-        # As a substring it would hit every slot. The answer is a refusal, not
-        # a list of everything the wearer has.
-        matched, refusal = match_slot(self._wearer(), "")
-        self.assertIsNone(matched)
-        self.assertTrue(refusal)
+        wearer = self._wearer()
+        self._held(wearer, Helmet, "iron helmet")
+        self.assertEqual(
+            resolve_wear(wearer, "iron helmet on tail"),
+            (None, match_slot(wearer, "tail")[1]),
+        )
+
+    def test_uw_04_an_item_not_carried_is_refused_with_find_carrieds_refusal(self):
+        """UW-04"""
+        wearer = self._wearer()
+        self.assertEqual(
+            resolve_wear(wearer, "boots"), (None, find_carried(wearer, "boots")[1])
+        )
+
+
+class ResolveRemoveTests(DjangoTestCase):
+    """UR — resolving what to remove."""
+
+    def _wearer(self):
+        from evennia import create_object
+        from tests.game_typeclasses import Humanoid
+
+        return create_object(Humanoid, key="wearer", nohome=True)
+
+    def _worn(self, wearer, typeclass, key):
+        from evennia import create_object
+
+        item = create_object(typeclass, key=key, location=wearer, nohome=True)
+        wearer.wear(item)
+        return item
+
+    def test_ur_01_an_item_name_alone_returns_the_worn_item(self):
+        """UR-01"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._worn(wearer, Helmet, "iron helmet")
+        self.assertEqual(resolve_remove(wearer, "iron helmet"), (helmet, None))
+
+    def test_ur_02_a_slot_alone_returns_what_is_in_it(self):
+        """UR-02"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._worn(wearer, Helmet, "iron helmet")
+        self.assertEqual(resolve_remove(wearer, "from head"), (helmet, None))
+
+    def test_ur_03_an_item_from_a_slot_returns_the_one_in_that_slot(self):
+        """UR-03"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        self._worn(wearer, Ring, "iron ring")
+        right = self._worn(wearer, Ring, "iron ring")
+        # Same key, one on each hand. The name alone would take the left.
+        self.assertEqual(
+            resolve_remove(wearer, "iron ring from right hand"), (right, None)
+        )
+
+    def test_ur_04_an_empty_slot_is_refused(self):
+        """UR-04"""
+        item, refusal = resolve_remove(self._wearer(), "from head")
+        self.assertIsNone(item)
+        self.assertIn("nothing", refusal.lower())
+
+    def test_ur_05_a_slot_holding_something_else_is_refused(self):
+        """UR-05"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._worn(wearer, Helmet, "iron helmet")
+        item, refusal = resolve_remove(wearer, "iron ring from head")
+        self.assertIsNone(item)
+        self.assertIn("iron ring", refusal)
+
+    def test_ur_06_a_slot_matching_nothing_is_refused_with_match_slots_refusal(self):
+        """UR-06"""
+        wearer = self._wearer()
+        self.assertEqual(
+            resolve_remove(wearer, "from tail"), (None, match_slot(wearer, "tail")[1])
+        )
+
+    def test_ur_07_an_item_not_worn_is_refused_with_find_worns_refusal(self):
+        """UR-07"""
+        wearer = self._wearer()
+        self.assertEqual(
+            resolve_remove(wearer, "boots"), (None, find_worn(wearer, "boots")[1])
+        )
 
 
 class WearCommandTests(EvenniaCommandTest):
@@ -2537,7 +2596,7 @@ class WearCommandTests(EvenniaCommandTest):
     def test_cw_01_no_argument_asks_what_to_wear(self):
         """CW-01"""
         out = self.call(CmdWear(), "", caller=self._wearer())
-        self.assertIn("what", out.lower())
+        self.assertEqual(out, "Wear what?")
 
     def test_cw_02_an_item_name_wears_it(self):
         """CW-02"""
@@ -2548,17 +2607,6 @@ class WearCommandTests(EvenniaCommandTest):
         out = self.call(CmdWear(), "iron helmet", caller=wearer)
         self.assertIs(wearer.worn_items["HEAD"], helmet)
         self.assertIn("iron helmet", out)
-
-    def test_cw_03_a_refusal_reaches_the_player_unchanged(self):
-        """CW-03"""
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        self._held(wearer, Helmet, "iron helmet")
-        self.call(CmdWear(), "iron helmet", caller=wearer)
-        out = self.call(CmdWear(), "iron helmet", caller=wearer)
-        # The mixin's wording, not a second one written here.
-        self.assertIn("already wearing", out.lower())
 
     def test_cw_04_on_a_slot_wears_it_there(self):
         """CW-04"""
@@ -2613,24 +2661,99 @@ class WearCommandTests(EvenniaCommandTest):
         told = self.call(CmdWear(), "iron helmet", caller=other)
         self.assertEqual(told.lower().count("you wear"), 1)
 
-    def test_cw_08_only_the_last_on_splits_the_argument(self):
-        """CW-08"""
-        from tests.game_typeclasses import Ring
+    def test_cw_03_an_at_pre_wear_refusal_reaches_the_player_unchanged(self):
+        """CW-03"""
+        from evennia import create_object
+        from tests.game_typeclasses import Helmet, UnwearableHumanoid
+
+        wearer = create_object(UnwearableHumanoid, key="wearer", location=self.room1)
+        helmet = self._held(wearer, Helmet, "iron helmet")
+        out = self.call(CmdWear(), "iron helmet", caller=wearer)
+        self.assertIn(f"{helmet} will not go on.", out)
+        self.assertIsNone(wearer.worn_items["HEAD"])
+
+    def test_cw_10_an_item_with_nowhere_free_is_refused(self):
+        """CW-10"""
+        from tests.game_typeclasses import Helmet
 
         wearer = self._wearer()
-        ring = self._held(wearer, Ring, "a ring on a chain")
-        # partition() would take "a chain" for the slot and refuse.
-        self.call(CmdWear(), "ring on a chain on right hand", caller=wearer)
-        self.assertIs(wearer.worn_items["RIGHT_HAND"], ring)
+        wearer.wear(self._held(wearer, Helmet, "iron helmet"))
+        steel = self._held(wearer, Helmet, "steel helmet")
+        out = self.call(CmdWear(), "steel helmet", caller=wearer)
+        self.assertIn("nowhere", out.lower())
+        self.assertFalse(wearer.is_worn(steel))
 
-    def test_cw_09_on_splits_the_argument_in_any_case(self):
-        """CW-09"""
-        from tests.game_typeclasses import Ring
+    def test_cw_11_an_item_declaring_no_slots_is_refused_as_not_wearable(self):
+        """CW-11"""
+        from tests.game_typeclasses import WearableThing
 
         wearer = self._wearer()
-        ring = self._held(wearer, Ring, "ring")
-        self.call(CmdWear(), "ring ON right hand", caller=wearer)
-        self.assertIs(wearer.worn_items["RIGHT_HAND"], ring)
+        self._held(wearer, WearableThing, "rock")
+        out = self.call(CmdWear(), "rock", caller=wearer)
+        self.assertIn("not something you can wear", out.lower())
+
+    def test_cw_12_an_item_that_cannot_go_on_the_named_slot_is_refused(self):
+        """CW-12"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, Helmet, "iron helmet")
+        out = self.call(CmdWear(), "iron helmet on left hand", caller=wearer)
+        self.assertIn("left hand", out.lower())
+        self.assertFalse(wearer.is_worn(helmet))
+
+    def test_cw_13_the_room_is_told_the_items_name_not_what_was_typed(self):
+        """CW-13"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        self._held(wearer, Helmet, "iron helmet")
+        self.char1.location = self.room1
+        seen = self.call(CmdWear(), "helmet", caller=wearer, receiver=self.char1)
+        self.assertIn("iron helmet", seen)
+
+    def test_cw_14_announce_is_the_room_line(self):
+        """CW-14"""
+        from tests.game_typeclasses import Helmet
+
+        announced = []
+
+        class Announcing(CmdWear):
+            def announce(self, item):
+                announced.append(item)
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, Helmet, "iron helmet")
+        self.char1.location = self.room1
+        seen = self.call(Announcing(), "iron helmet", caller=wearer, receiver=self.char1)
+        self.assertEqual(announced, [helmet])
+        # The default is replaced, not added to.
+        self.assertNotIn("iron helmet", seen)
+
+    def test_cw_15_at_success_runs_once_on_success_and_not_on_a_refusal(self):
+        """CW-15"""
+        from tests.game_typeclasses import Helmet
+
+        succeeded = []
+
+        class Charging(CmdWear):
+            def at_success(self, item):
+                succeeded.append(item)
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, Helmet, "iron helmet")
+        self.call(Charging(), "boots", caller=wearer)
+        self.assertEqual(succeeded, [])
+        self.call(Charging(), "iron helmet", caller=wearer)
+        self.assertEqual(succeeded, [helmet])
+
+    def test_cw_16_cmdwear_is_the_mixin_over_evennias_command(self):
+        """CW-16"""
+        from evennia import Command
+
+        self.assertTrue(issubclass(CmdWear, CmdWearMixin))
+        self.assertTrue(issubclass(CmdWear, Command))
+        self.assertFalse(issubclass(CmdWearMixin, Command))
 
 
 class RemoveCommandTests(EvenniaCommandTest):
@@ -2654,7 +2777,7 @@ class RemoveCommandTests(EvenniaCommandTest):
     def test_cm_01_no_argument_asks_what_to_remove(self):
         """CM-01"""
         out = self.call(CmdRemove(), "", caller=self._wearer())
-        self.assertIn("what", out.lower())
+        self.assertEqual(out, "Remove what?")
 
     def test_cm_02_an_item_name_removes_it(self):
         """CM-02"""
@@ -2665,17 +2788,6 @@ class RemoveCommandTests(EvenniaCommandTest):
         out = self.call(CmdRemove(), "iron helmet", caller=wearer)
         self.assertIsNone(wearer.worn_items["HEAD"])
         self.assertIn("iron helmet", out)
-
-    def test_cm_03_a_refusal_reaches_the_player_unchanged(self):
-        """CM-03"""
-        from evennia import create_object
-        from tests.game_typeclasses import Helmet
-
-        wearer = self._wearer()
-        create_object(Helmet, key="iron helmet", location=wearer)
-        out = self.call(CmdRemove(), "iron helmet", caller=wearer)
-        # The mixin's wording for carried-but-not-worn, not a second one here.
-        self.assertIn("not wearing", out.lower())
 
     def test_cm_04_an_item_and_a_slot_remove_from_that_slot(self):
         """CM-04"""
@@ -2741,23 +2853,69 @@ class RemoveCommandTests(EvenniaCommandTest):
         told = self.call(CmdRemove(), "iron helmet", caller=other)
         self.assertEqual(told.lower().count("you remove"), 1)
 
-    def test_cm_09_only_the_last_from_splits_the_argument(self):
-        """CM-09"""
+    def test_cm_03_an_at_pre_remove_refusal_reaches_the_player_unchanged(self):
+        """CM-03"""
+        from evennia import create_object
+        from tests.game_typeclasses import CursedHumanoid, Helmet
+
+        wearer = create_object(CursedHumanoid, key="wearer", location=self.room1)
+        helmet = self._worn(wearer, Helmet, "iron helmet")
+        out = self.call(CmdRemove(), "iron helmet", caller=wearer)
+        self.assertIn(f"{helmet} will not come off.", out)
+        self.assertTrue(wearer.is_worn(helmet))
+
+    def test_cm_11_the_room_is_told_the_items_name_not_the_slot(self):
+        """CM-11"""
         from tests.game_typeclasses import Ring
 
         wearer = self._wearer()
-        ring = self._worn(wearer, Ring, "a ring from a king")
-        self.call(CmdRemove(), "ring from a king from left hand", caller=wearer)
-        self.assertFalse(wearer.is_worn(ring))
+        self._worn(wearer, Ring, "iron ring")
+        self.char1.location = self.room1
+        seen = self.call(CmdRemove(), "from left hand", caller=wearer, receiver=self.char1)
+        self.assertIn("iron ring", seen)
+        self.assertNotIn("hand", seen.lower())
 
-    def test_cm_10_from_splits_the_argument_in_any_case(self):
-        """CM-10"""
-        from tests.game_typeclasses import Ring
+    def test_cm_12_announce_is_the_room_line(self):
+        """CM-12"""
+        from tests.game_typeclasses import Helmet
+
+        announced = []
+
+        class Announcing(CmdRemove):
+            def announce(self, item):
+                announced.append(item)
 
         wearer = self._wearer()
-        ring = self._worn(wearer, Ring, "ring")
-        self.call(CmdRemove(), "ring FROM left hand", caller=wearer)
-        self.assertFalse(wearer.is_worn(ring))
+        helmet = self._worn(wearer, Helmet, "iron helmet")
+        self.char1.location = self.room1
+        seen = self.call(Announcing(), "iron helmet", caller=wearer, receiver=self.char1)
+        self.assertEqual(announced, [helmet])
+        self.assertNotIn("iron helmet", seen)
+
+    def test_cm_13_at_success_runs_once_on_success_and_not_on_a_refusal(self):
+        """CM-13"""
+        from tests.game_typeclasses import Helmet
+
+        succeeded = []
+
+        class Charging(CmdRemove):
+            def at_success(self, item):
+                succeeded.append(item)
+
+        wearer = self._wearer()
+        helmet = self._worn(wearer, Helmet, "iron helmet")
+        self.call(Charging(), "boots", caller=wearer)
+        self.assertEqual(succeeded, [])
+        self.call(Charging(), "iron helmet", caller=wearer)
+        self.assertEqual(succeeded, [helmet])
+
+    def test_cm_14_cmdremove_is_the_mixin_over_evennias_command(self):
+        """CM-14"""
+        from evennia import Command
+
+        self.assertTrue(issubclass(CmdRemove, CmdRemoveMixin))
+        self.assertTrue(issubclass(CmdRemove, Command))
+        self.assertFalse(issubclass(CmdRemoveMixin, Command))
 
 
 class EquipmentCommandTests(EvenniaCommandTest):
@@ -2852,6 +3010,15 @@ class EquipmentCommandTests(EvenniaCommandTest):
         self.assertEqual(head.index("an iron"), hand.index("an iron"))
 
 
+    def test_ce_09_cmdequipment_is_the_mixin_over_evennias_command(self):
+        """CE-09"""
+        from evennia import Command
+
+        self.assertTrue(issubclass(CmdEquipment, CmdEquipmentMixin))
+        self.assertTrue(issubclass(CmdEquipment, Command))
+        self.assertFalse(issubclass(CmdEquipmentMixin, Command))
+
+
 class InventoryCommandTests(EvenniaCommandTest):
     """CI — what a player is carrying but not wearing."""
 
@@ -2922,17 +3089,16 @@ class InventoryCommandTests(EvenniaCommandTest):
 
     def test_ci_05_stacking_is_by_key_not_by_displayed_name(self):
         """CI-05"""
-        from tests.game_typeclasses import CarriableThing, ShroudedHelmet
+        from tests.game_typeclasses import ShroudedHelmet
 
         wearer = self._wearer()
-        self._held(wearer, CarriableThing, "a rock")
+        self._held(wearer, ShroudedHelmet, "a rock")
         self._held(wearer, ShroudedHelmet, "a stone")
         out = self.call(CmdInventory(), "", caller=wearer)
-        # Different keys, and one of them displays as "something". Stacking by
-        # what is shown would still keep them apart here; stacking by key is
-        # what keeps the counts real when several display the same.
-        self.assertIn("a rock", out)
-        self.assertIn("something", out)
+        # Different keys, both made out as "something". Stacking by what is
+        # shown would give "something (2)".
+        self.assertEqual(out.count("something"), 2)
+        self.assertNotIn("(2)", out)
 
     def test_ci_06_carrying_nothing_says_so(self):
         """CI-06"""
@@ -3023,6 +3189,15 @@ class InventoryCommandTests(EvenniaCommandTest):
         self.assertEqual(out.count("a healing potion"), 1)
         self.assertIn("(2)", out)
         self.assertEqual(out.count("a longsword"), 2)
+
+
+    def test_ci_15_cmdinventory_is_the_mixin_over_evennias_command(self):
+        """CI-15"""
+        from evennia import Command
+
+        self.assertTrue(issubclass(CmdInventory, CmdInventoryMixin))
+        self.assertTrue(issubclass(CmdInventory, Command))
+        self.assertFalse(issubclass(CmdInventoryMixin, Command))
 
 
 class CmdSetTests(EvenniaCommandTest):

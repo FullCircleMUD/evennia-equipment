@@ -180,7 +180,7 @@ declaration is checked in `__init_subclass__` — when the class is defined, whi
 library can see it, since nothing at boot can enumerate a consumer's typeclasses.
 
 `worn_items` is the storage: a real, persisted dictionary of slot name to the item in it or `None`.
-Built once, then mutated — `wear()` assigns an item, `remove()` assigns `None`. Reads are a plain
+Built once, then reassigned — `wear()` fills slots with an item, `remove()` sets them to `None`. Reads are a plain
 attribute read, because a body plan changes when code changes, which is a restart.
 
 `at_init()` reconciles the two once per load: it adds slots the class has gained and drops ones it has
@@ -199,53 +199,37 @@ hand, so `two_handed` needs no flag, no command checks and no display note.
 **Selection completes before anything is written.** Filling slots while checking them would leave a
 two-handed item in one hand when the other turned out to be occupied.
 
-**`wear(item, slot=...)` names a place.** Group order is the item author's preference, and preference
-is not always what a player means: a shortsword declaring `[["WIELD"], ["HOLD"]]` goes to the wield
-hand whenever that hand is free, so asking to *hold* it gets it wielded — and a ring always lands on
-the first free finger rather than the one asked for. Naming a slot narrows the candidate groups to
-those **containing** it, then selection proceeds unchanged.
+**`slots_for(item, slot=None)` answers where an item would go; `wear(item, slot=None)` puts it there.**
+The query changes nothing, so a command asks it, refuses on `None`, and only then calls `wear()` — which
+asks it again, so the check and the placement cannot disagree.
 
-Containing, not equal to: a group is taken whole, so a greatsword named by one hand still takes both.
-The two refusals stay apart because the fixes differ — "you have no `DOG_NECK`" is about the wearer's
-body, "the helmet cannot be worn on your `LEFT_HAND`" is about the item, and one message for both
-would be wrong half the time.
+**`slot` names a place.** Group order is the item author's preference, and preference is not always
+what a player means: a shortsword declaring `[["WIELD"], ["HOLD"]]` goes to the wield hand whenever it
+is free, and a ring lands on the first free finger. Naming a slot — an enum member — narrows the groups
+to those **containing** it. Containing, not equal to: a group is taken whole, so a greatsword named by
+one hand still needs both free.
 
-A slot is given as an enum member or as its value. A consumer declares `body_slots` with members and
-reads `worn_items` keyed by their values, so whichever the library demanded would be the other one to
-somebody.
-
-This is what makes `wield` and `hold` more than `wear` with a different word printed, and it opens a
-command syntax the library does not otherwise reach — `wear ring on right finger`.
-
-**`remove()` takes a slot too, and there it can stand alone.** Wearing nothing into a slot means
-nothing, so `wear()` keeps its item required; taking off whatever is on the right finger is a complete
-instruction, so `remove(slot=...)` needs no item.
-
-| Call | Means |
-|---|---|
-| `remove("ring")` | the worn items matching, first if they share a key |
-| `remove("ring", slot="RIGHT_FINGER")` | that item, and only if it is in that slot |
-| `remove(None, slot="RIGHT_FINGER")` | whatever is in that slot |
-| `remove()` | neither — refused rather than guessed at |
-
-**Two identical rings is what the argument is for.** `Which ring do you mean?` has no answer a player
-can give when both keys are the same, so naming the slot is the only way to say which hand. Nothing
-else on the surface reaches it.
-
-Which decides how the two arguments combine: given both, **the string confirms what is in the slot**
-rather than being resolved on its own. Resolving independently returns the first of the two rings and
-then fails the identity check against the slot — refusing the exact call the argument exists to serve.
+**`remove(item)` takes only the item.** A slot identifies what to take off, so once the caller has the
+item — by name, or read out of `worn_items[slot]` — a slot adds nothing. That is how a player picks
+between two identical rings: `remove from right finger` reads the slot, and hands `remove()` the ring
+in it.
 
 ## Four hooks around wearing
 
 | Hook | Returns | Fires |
 |---|---|---|
-| `at_pre_wear(item)` | `(bool, str)` | after the ordinary refusals, before a slot is chosen |
-| `at_post_wear(item, slots)` | nothing | after the slots are written, on success only |
-| `at_pre_remove(item)` | `(bool, str)` | before anything is freed |
-| `at_post_remove(item, slots)` | nothing | after the slots are freed, on success only |
+| `at_pre_wear(item)` | `(bool, str)` | inside `wear()`, after its guards, before anything is written |
+| `at_post_wear(item, slots)` | nothing | after the slots are written, only when the item went on |
+| `at_pre_remove(item)` | `(bool, str)` | inside `remove()`, after its guard, before anything is freed |
+| `at_post_remove(item, slots)` | nothing | after the slots are freed, only when the item came off |
 
 The library refuses nothing of its own in any of them.
+
+**The pre hooks are the one decision inside `wear()` and `remove()`.** Everything else — finding the
+item, checking it can go where asked — is settled by the caller before the call. The pre hooks are
+different because they are how other components add their rules: a class restriction, a minimum
+strength, a curse. Asking them inside the method means every path gets the veto, `restore_worn()`
+included. A refusal comes back as `(False, reason)`, for the command to tell the player.
 
 **Equipment changes a character, and the library cannot know how.** A ring of strength is worth nothing
 until something recalculates the wearer's strength, and that has to happen on both edges. Nothing else
@@ -321,19 +305,21 @@ rebuild is told to exclude it.
 
 ## Wearing, step by step
 
-What happens when a consumer's command calls `wear(item)`. No gaps.
+What happens when a player types `wear ring on right finger`. No gaps.
 
-- **[game]** the command resolves what the player named, using Evennia's search
-- **[game]** the command calls `caller.wear(item)`
-- **[library]** the item is refused unless it is in `contents` and not already worn
-- **[library]** the item's `wearslot` groups are read; an item declaring none is refused
-- **[library]** each group is tested — every slot in it must exist on this wearer and be free
-- **[library]** the first whole group that passes is filled, all slots at once
-- **[library]** `(True, message)` goes back, or `(False, why not)`
-- **[game]** the command speaks
+- **[game]** the command's `resolve_wear()` splits the text and finds the item with `find_carried()`
+  and the slot with `match_slot()`
+- **[game]** the command asks `slots_for(item, slot)`, and refuses on `None`
+- **[game]** the command calls `caller.wear(item, slot)`
+- **[library]** an item not carried, already worn, or with nowhere free raises — the caller should have
+  settled it
+- **[library]** `at_pre_wear(item)` is asked; a refusal returns `(False, reason)`
+- **[library]** the group is written, all its slots at once, and `at_post_wear(item, group)` fires
+- **[library]** `(True, "")` goes back
+- **[game]** the command speaks, tells the room, and runs anything it does on success
 
-Selection completes before anything is written. Nothing moves: the item was in `contents` before and
-is in `contents` after, so the carried weight does not change.
+Nothing moves: the item was in `contents` before and is in `contents` after, so the carried weight does
+not change.
 
 ## Recovering equipment after a rebuild, step by step
 
@@ -348,8 +334,11 @@ two `[game]` steps are the consumer's to wire up.
 - **[evennia-archive]** the character is restored, its slot assignments gone
 - **[game]** the items are restored into `contents`
 - **[game]** `restore_worn()` is called
-- **[library]** `contents` is walked and anything whose identity is in the record is worn
-- **[library]** one `(bool, str)` per attempt comes back, refusals included
+- **[library]** `contents` is walked for anything whose identity is in the record
+- **[library]** an item already worn, or with nowhere free, is refused; anything else goes through
+  `wear()` into its default group, so `at_pre_wear` is asked
+- **[library]** one `(bool, str)` per attempt comes back, refusals included, and refusals are logged at
+  INFO — nothing is sent to the player
 
 **Both `[game]` steps exist because the library cannot know when they happen.** Nothing it could hook
 would tell it a game is about to archive, or that an asynchronous restore has finished — and hooking
@@ -365,195 +354,74 @@ moment its source is destroyed, which is the whole point of it. Persisted on the
 
 ## Commands
 
-**Four live in `contrib/`** — `wear`, `remove`, `equipment`, `inventory`. The test in the standards is
-whether core is fully functional without the folder, and it is: the mixins are complete, and a consumer
-driving `wear()` from their own code loses nothing.
+**Four live in `contrib/`** — `wear`, `remove`, `equipment`, `inventory` — each as a mixin for a game to
+compose onto its own command class, and as a concrete command over Evennia's `Command`:
 
-They ship because Evennia has no vocabulary for slots, so a consumer would otherwise have a mechanism
-no player can reach. Only `inventory` replaces anything of Evennia's; the other three are new words,
-and Evennia merges cmdsets by key, so no explicit removal is needed.
-
-**`wield` and `hold` are not among them.** They are a game's vocabulary rather than a mechanism: they
-only mean something where an item's natural slot differs from where a player sometimes wants it, and
-their slot names come from a consumer's enum. The capability stays reachable without them —
-`wear sword on wield` does everything `wield sword` does — so a game that wants the shorthand writes
-two short subclasses.
-
-`get`, `drop` and `give` are not among them either, and need not be. Evennia's `CmdGet` calls
-`obj.move_to(caller)`, so `at_pre_object_receive` already fires and the stock commands respect a
-refusal untouched.
-
-**They are replaced wholesale, not extended.** No display hooks, no seams. A consumer wanting different
-output overrides `func()` — which is what FCM will do, since almost all of its inventory rendering is
-its own: fungible balances interleaved with the items, gold, encumbrance, condition labels, and what a
-blind character can make out. Five seams to share fifteen lines of stacking logic is a poor trade, and
-each seam is a shape the next consumer has to fit. A seam gets added when a second consumer asks for
-one, and it will be the right seam because someone will have said where it goes.
-
-**They render like a MUD, not like a debug dump.** Colour, aligned columns, slot names title-cased.
-FCM's `equipment` and `inventory` are the benchmark:
-
-```
-Equipped Items
-
-  <Head>        a leather cap  (worn)
-  <Left Hand>   a shortsword   (pristine)
-  <Right Hand>
+```python
+class CmdWear(CmdWearMixin, QueuedCommand):   # a game's own base
+    key = "wear"
 ```
 
-What contrib cannot do is anything reading a game's own attributes — condition labels, visibility,
-balances. Those are why a consumer replaces the command rather than configures it.
+Core is complete without the folder: a game driving `wear()` from its own code loses nothing. They ship
+because Evennia has no vocabulary for slots.
 
-### Naming a slot from typed text
+**A command decides, then executes.** `wear()` and `remove()` take an item already found, so the finding
+is the command's. The helpers do it:
 
-`wear ring on right finger` needs the player's words turned into a slot name. `match_slot(wearer,
-text)` in `contrib/utils.py` does it, and it is contrib's because **core never sees typed text** — its
-methods take a slot name or an enum member.
+| Helper | Lives in | Does |
+|---|---|---|
+| `find_carried(caller, text)` | `finders` | the item named among what is carried and not worn |
+| `find_worn(caller, text)` | `finders` | the item named among what is worn |
+| `match_slot(caller, text)` | `finders` | typed text as one of the caller's slots, an enum member |
+| `resolve_wear(caller, text)` | `contrib.utils` | `<item> [on <slot>]` as an item and a slot |
+| `resolve_remove(caller, text)` | `contrib.utils` | `<item>`, `<item> from <slot>` or `from <slot>` as an item |
 
-It returns `(slot_name, None)` or `(None, refusal)` — the shape `_resolve_wearable()` uses, so a
-command reads the same for items and slots. The matching is `evennia_targeting.parse_match(...,
-substring=True)`: an exact match wins outright, which a game with both `HAND` and `LEFT_HAND` needs;
-failing that, the start of a word, then a substring. One hit is the answer; several are a question.
-Case, spaces, underscores and hyphens are ignored, so `RIGHT_FINGER` and `RIGHTFINGER` both answer to
-every spelling a player might type. What reaches `wear()` is the real value.
+Each returns `(answer, None)` or `(None, refusal)` with a finished message, and messages no one. The
+finders are core because carried and worn are this library's concepts — any command acting on a
+player's inventory or equipment uses them, an `enchant` as much as a `wear`.
 
-It matches **this wearer's slots, not the whole enum**, so a humanoid asking for a dog neck is told it
-has none rather than told it is ambiguous, and a one-fingered creature is never asked which finger.
+The finders match with Evennia's own `caller.search`, so aliases and `sword-2` work as in every other
+command. `quiet=True`, so Evennia says nothing itself; `use_dbref=False`, because a `#dbref` makes the
+search global and a builder would otherwise reach an object anywhere in the game. `match_slot` uses
+`evennia_targeting.parse_match(..., substring=True)` over the caller's own slots, so a humanoid typing
+`dog neck` is told it has none.
 
-Three refusals, and the difference between them is what a player has left to go on:
+The split is `evennia_targeting.parse_split`, on the last whole-word `on` or `from`. An item whose name
+holds the spaced word — *a ring on a chain* — needs the slot named to be worn by name.
 
-```
-Which slot? Type 'equipment' to see your wear slots.
-You have no foot. Type 'equipment' to see your wear slots.
-Which do you mean — left hand or right hand?
-```
+**Four seams, each with one job.**
 
-The first two leave a player with nothing, so both name the command that answers it. The third does
-not, because the options are already in the message. All three are verb-agnostic — `remove from right
-finger` uses the same matcher, so nothing here may assume wearing.
+| Seam | On | Default |
+|---|---|---|
+| `announce(item)` | `wear`, `remove` | tells the room with `msg_contents`; a game with its own messaging overrides it |
+| `at_success(item)` | `wear`, `remove` | nothing; a game whose equipping costs a turn starts its time wait here |
+| `extra_lines()` | `inventory` | `[]`; a game's balances, placed between the items and the summary |
+| `slot_column_gap` | `equipment` | `2`; the spaces after the slot column |
 
-Ambiguous slots are listed where ambiguous **items** are not. A name match could run to five and the
-list would be noise; a wearer has ten slots in total and a substring rarely hits more than two, so
-naming them tells the player exactly which words work.
+`announce` and `at_success` run only when the item went on or came off. The room line names the item
+found, not what was typed.
 
-### What a command actually does
+**`wield`, `hold`, `get`, `drop` and `give` are not among them.** `wield` and `hold` are a game's words
+over its own slot names — `wear sword on wield` already does the job. Evennia's `get` and `drop` call
+`move_to`, so `at_pre_object_receive` fires with no command of ours.
 
-`CmdWear` is about twenty lines, and none of them decide anything:
+### Reading a slot sheet and an inventory
 
-```
-wear <item>
-wear <item> on <slot>
-```
+`equipment` lists every slot in `body_slots` order, with the item named through
+`get_display_name(caller)` — Evennia's viewer-aware hook, so a game whose items read differently in the
+dark gets it here for free. An empty slot shows its name and nothing else. A multi-slot item appears
+under every slot it fills. The column width comes from the longest slot name.
 
-1. Refuse an empty argument.
-2. Split on the **last** ` on `.
-3. If a slot was named, match it — **before** `wear()` is called, so a mistyped slot never puts the
-   item on somewhere else first.
-4. Call `wear()`, and say what it returns.
-5. On success, tell the rest of the room.
-
-Every refusal a player sees comes from the mixin or the matcher **verbatim**, so "you are already
-wearing that" has one wording however a player reached it.
-
-`CmdRemove` is the same shape, splitting on ` from ` and with one form wearing has no counterpart to:
-
-```
-remove <item>
-remove <item> from <slot>
-remove from <slot>
-```
-
-**Both split through `evennia_targeting.parse_split(text, keyword)`**, on the **last** whole-word
-occurrence of the keyword, in any case. Last, not first, because an item may contain the word — *a
-ring on a chain* — and splitting on the first would take the chain for a slot.
-
-The edges are ordinary splits. `remove from right hand` has nothing before the keyword, so no item;
-`remove helmet from` has nothing after it, so an empty slot rather than a name swallowing the keyword.
-The item-less form needs no branch of its own. No keyword at all comes back as no slot.
-
-The cost of splitting at all is that `wear ring on a chain`, with no slot meant, reads the chain as one
-and refuses. Nothing in the string says which was intended, so the rule is not to put ` on ` or
-` from ` in a wearable's name — the letters are fine, it is the spaced word that splits, so *an onyx
-ring* and *a bone helm* are safe.
-
-The room broadcast excludes the caller. Without that they receive the mixin's message and the rendered
-broadcast, which read identically — "You wear iron helmet." twice.
-
-### Reading a slot sheet
-
-`CmdEquipment` lists every slot the wearer has, in `body_slots` order, with what is in it:
-
-```
-Equipped Items
-
-  <Head>        an iron helmet
-  <Body>
-  <Left Hand>   a greatsword
-  <Right Hand>  a greatsword
-```
-
-**The item is named through `get_display_name(caller)`**, which is Evennia's own viewer-aware hook. A
-game whose items read differently in the dark overrides that once and gets it here, in `look`, and
-everywhere else. A seam of ours would be a second and worse version of the same thing — so this
-library provides none, and that is the answer for `inventory` too.
-
-The boundary is worth knowing: per-item naming is covered, whole-listing behaviour is not. A game that
-renders *every* line as "Something" when the looker is blind is making a decision about the listing,
-which no per-item hook can express, and overrides the command.
-
-**The column width is computed** from the longest slot name this wearer has, so a body plan naming a
-`LEFT_SHOULDER_PAULDRON` still aligns. The gap after it is `slot_column_gap`, a class attribute rather
-than a module constant — a game widens it by subclassing, and nothing in contrib declares a constant
-that would belong in core's `config.py`.
-
-**An empty slot shows its name and nothing else.** The absence is the information, and a word for it
-would be noise on every line a player has not filled.
-
-**A multi-slot item appears under every slot it fills.** A greatsword beside both hands reads oddly,
-but `worn_items` genuinely holds it twice and showing it once would leave a hand looking free.
-Collapsing it is a judgement about wording, which belongs to whoever replaces the command.
-
-### Reading an inventory
-
-`CmdInventory` replaces Evennia's, which lists `contents` and so shows a player their armour as though
-it were in a sack. Ours lists what is held and **not** worn:
-
-```
-Inventory:
-
-  a healing potion (3)
-  a longsword
-  a longsword
-
-  8 gold, 12 wheat
-
-Carrying 9.5 of 40.0.
-```
-
-**`stackable` decides whether two things are one line.** It is on `EquipmentCarriableMixin`, `True` by
-default, and validated as a real `bool` — `stackable = 1` would pass a truthiness check and mean
-nothing. A game with durability, charges or ownership sets it `False` on the items that differ, and the
-library never learns why. Two longswords are not the same longsword once one is chipped, and only the
-game knows that.
-
-It is on the item rather than in the command because "is this the same as that" is an item's question.
-A rule inside a listing could only compare names, and names are exactly what fails to distinguish them.
-
-**Stacking is by key, not by displayed name.** Stacking by what is shown would merge a seen and an
-unseen copy of one thing, and hand a blind player a single `Something (50)` where the real groupings
-tell them more. Each group is then rendered once through `get_display_name()`.
-
-**`extra_lines()` is the one seam contrib provides.** It returns `[]`, and a consumer returns its
-currency and resource balances. Those are more things being carried rather than a footer after them, so
-they sit between the items and the summary — a position no override of the rendering could reach, which
-is what earns the seam under the rule the rest of contrib is held to.
-
-**The summary names a limit only when there is one.** Capacity defaults to `float("inf")`, so a game
-that never sets one would otherwise read `Carrying 9.5 of inf.`
+`inventory` lists what is carried and **not** worn — Evennia's lists `contents`, and so shows a player
+their armour as though it were in a sack. One `bucket_contents` walk filters and groups: a stackable
+item's bucket is its key, an unstackable one gets its own. `stackable` is on the item, `True` by
+default, because "is this the same as that" is the item's question. Stacking is by key, not displayed
+name, so two different things a looker makes out as `something` stay two lines. The summary names a
+limit only when there is one.
 
 ### One thing to merge
 
-`EquipmentCmdSet` holds the four, so installing them is a line rather than four imports:
+`EquipmentCmdSet` holds the four concrete commands:
 
 ```python
 class CharacterCmdSet(default_cmds.CharacterCmdSet):
@@ -562,58 +430,11 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(EquipmentCmdSet)
 ```
 
-**Added after the defaults, and that ordering is the point.** Evennia merges cmdsets by key, and the
-later set wins — so `inventory` replaces its own rather than competing with it, and a consumer removes
-nothing. Get that backwards and nothing looks broken: a player types `inventory`, gets a listing, and
-it is Evennia's, offering them the armour they are wearing.
+Added after the defaults, so our `inventory` replaces Evennia's by key. A game composing the mixins onto
+its own commands adds those instead.
 
-It is a convenience rather than a requirement. A game wanting three of the four adds those
-individually, and one replacing `inventory` adds its own after ours — both ordinary Evennia, needing
-nothing from here.
-
-Consumer-facing detail is in **[contrib.md](contrib.md)** rather than this document, which is about
-why the library is shaped the way it is.
-
-**The mixin resolves the name, so the command does not.** `wear()` and `remove()` each take a string
-or an object, and a string is matched against what the wearer holds with `f_key_matches` — the same
-filter path as everything else the library walks.
-
-The alternative made every command do the work twice. A command handed only objects has to filter the
-wearer's contents to find one, and then `wear()` filters again to confirm what the caller just
-established. Resolving inside means it happens once, and the command is three lines:
-
-```python
-worn, message = caller.wear(self.args)
-caller.msg(message)
-```
-
-An object is still accepted, because `restore_worn()` and a consumer equipping something it has just
-created both hold one already — and two identical rings are distinct objects but the same string.
-
-**Each searches its own half, in two passes.** `wear()` looks at the unworn items first, `remove()` at
-the worn ones. The second pass is what makes the refusal useful: a single pass tells someone already
-wearing the helmet that they are not carrying it, and tells someone holding the boots that they have no
-such thing. Both are false, and neither helps.
-
-| | First pass | Second pass says | Nothing matched |
-|---|---|---|---|
-| `wear()` | not worn | "You are already wearing X" | "You are not carrying `<text>`" |
-| `remove()` | worn | "You are not wearing X" | "You are not carrying `<text>`" |
-
-**Several matches are two different situations.** Items sharing a key are interchangeable, so the first
-is taken — asking which of two identical rings is meant has no answer a player can give. Differing keys
-are a real question, and the reply quotes what was typed rather than listing candidates, which could
-run to five.
-
-**The scope is what the wearer holds, and nothing wider.** Rooms, containers on the floor and other
-characters are the command's problem, and a command wanting one of those resolves it itself and passes
-the object.
+Consumer-facing detail is in **[contrib.md](contrib.md)**.
 
 ## Not yet decided
 
-Nothing. The mechanism is complete, and the four commands are agreed in shape and unwritten — work
-rather than an open question.
-
-Two things that were open here are settled above: the commands render, and they are replaced wholesale
-rather than configured; and the gate on wearing is on the wearer, `at_pre_wear()`, with no item-side
-counterpart — a consumer wanting one delegates to the item in a line.
+Nothing.

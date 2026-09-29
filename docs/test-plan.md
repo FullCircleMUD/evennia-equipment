@@ -11,7 +11,7 @@ function carries its case ID as its docstring, so the trail reads in both direct
 All test functions live in `src/evennia_equipment/tests.py`.
 
 Behaviour is agreed here first, before any test or code — see
-[test-first-process.md](../../../design/test-first-process.md).
+[design-principles.md](../../../design/design-principles.md) § 8.
 
 | Prefix | Covers |
 |---|---|
@@ -39,12 +39,17 @@ Behaviour is agreed here first, before any test or code — see
 | `ER` | `update_worn_equipment_record()` — writing down what is worn, to restore it later |
 | `RW` | `restore_worn()` — putting the recorded equipment back on after a rebuild |
 | `TG` | The filters this library publishes for `evennia-targeting` |
+| `FC` | `finders.find_carried()` — the item a player names among what they carry and are not wearing |
+| `FW` | `finders.find_worn()` — the item a player names among what they are wearing |
+| `MS` | `finders.match_slot()` — turning what a player typed into one of their slots |
 | `NS` | *Retired — case and separators are `evennia_targeting.parse_match`'s* |
-| `SM` | `contrib.utils.match_slot()` — turning what a player typed into a slot name |
-| `CW` | `contrib.commands.CmdWear` — the command a player types |
-| `CM` | `contrib.commands.CmdRemove` — the command a player types to take something off |
-| `CE` | `contrib.commands.CmdEquipment` — the slot sheet a player reads |
-| `CI` | `contrib.commands.CmdInventory` — what a player is carrying but not wearing |
+| `SM` | *Retired — matching a typed slot name is `finders.match_slot()`'s* |
+| `UW` | `contrib.utils.resolve_wear()` — what a player typed after `wear`, as an item and a slot |
+| `UR` | `contrib.utils.resolve_remove()` — what a player typed after `remove`, as an item |
+| `CW` | `contrib.commands.CmdWearMixin` and `CmdWear` — the command a player types to put something on |
+| `CM` | `contrib.commands.CmdRemoveMixin` and `CmdRemove` — the command a player types to take something off |
+| `CE` | `contrib.commands.CmdEquipmentMixin` and `CmdEquipment` — the slot sheet a player reads |
+| `CI` | `contrib.commands.CmdInventoryMixin` and `CmdInventory` — what a player is carrying but not wearing |
 | `CS` | `contrib.cmdset.EquipmentCmdSet` — the four commands, merged in one line |
 
 ## Fixtures
@@ -586,49 +591,40 @@ An item in a dropped slot stops being worn with no hook fired, and this line is 
 
 ### WE — wearing
 
-`wear(item)` takes **a string or an object** and returns `(bool, message)`.
+Two methods: a query that answers where an item would go, and `wear()`, which puts it there.
 
-**Both, because the redundancy is otherwise unavoidable.** A command handed only objects has to filter
-the wearer's contents to find one, and then `wear()` filters again to confirm what the caller just
-established. Resolving inside means the work happens once. An object is still accepted, because
-`restore_worn()` and a consumer equipping something it has just created both hold one already — and two
-identical rings are distinct objects but the same string.
+**`slots_for(item, slot=None)`** returns the group of slots the item would fill on this wearer, or
+`None`. It changes nothing and decides nothing.
 
-**Resolution is a filter, not a search.** The candidates come from `walk_contents` with
-`f_key_matches`, so the name test lives beside every other filter in the ecosystem rather than inside
-this one function.
+1. Take the item's groups, in declaration order.
+2. With `slot` — an enum member — keep only the groups containing it.
+3. Return the first group where **every** slot exists on this wearer and is free.
+4. None qualifies — no groups, none containing the slot, none free — returns `None`.
 
-The order is what makes the refusals accurate:
+Group order is the item author's preference — `[["RIGHT_FINGER"], ["LEFT_FINGER"]]` favours the right
+hand — and the library holds no opinion about it. **`slot` overrides that preference**: a ring goes
+on the finger asked for, and a shortsword declaring `[["WIELD"], ["HOLD"]]` can be held. Naming one
+slot of a multi-slot group takes the whole group, and only if every slot in it is free — a greatsword
+named by the right hand, with something in the left, gets `None`.
 
-1. Match against what is carried and not worn. One or more results, that is the answer.
-2. Otherwise match against what is worn — a hit there means "you are already wearing it", which is a
-   different answer to "you are not carrying it".
-3. Otherwise nothing matched.
+**`wear(item, slot=None)`** puts the item on. `item` is the object, already found by the caller, and
+the caller has already asked `slots_for(item, slot)` — `wear()` identifies nothing.
 
-**Several matches are two different situations.** Items sharing a key are interchangeable, so the
-first is worn and the player is not asked a question with no useful answer. Items with different keys
-are a genuine question, and the reply echoes what was typed — `Which ring do you mean?` — rather than
-listing the candidates, which could be five.
+1. The item not in `contents` raises.
+2. The item already worn raises.
+3. `slots_for(item, slot)` — `None` raises.
+4. Ask `at_pre_wear(item)`. A refusal returns `(False, reason)`, and nothing changes.
+5. Write `worn_items` with that group filled.
+6. Call `at_post_wear(item, group)`.
+7. Return `(True, "")`.
 
-Selection then walks the item's groups in declaration order and takes the first one where **every**
-slot exists on this wearer and is free. Group order is therefore the item author's preference —
-`[["RIGHT_FINGER"], ["LEFT_FINGER"]]` favours the right hand — and the library holds no opinion about
-it.
+Each raise is a caller bug, and each stops a state that would otherwise be corrupt: worn but not
+carried, worn twice, or a call that silently did nothing.
 
-**`slot=` overrides that preference.** Naming a slot narrows the candidate groups to those *containing*
-it, and selection proceeds as before over what is left. Without it, nothing changes.
-
-Group order alone cannot express "not the obvious one". A shortsword declaring
-`[["WIELD"], ["HOLD"]]` goes to the wield hand whenever that hand is free, so a player asking to hold
-it gets it wielded — and a ring is always put on the first free finger, never the one asked for. The
-argument is what lets a command mean a particular place.
-
-**A slot is named as an enum member or as its value.** `body_slots` is declared with members and
-`worn_items` is keyed by their values, so a consumer holds one and the library holds the other. Taking
-both costs a line and removes a trap that would otherwise bite once per consumer.
-
-Two refusals, kept apart because the player's fix differs: an item that cannot go there at all, and a
-wearer that has no such place.
+**`at_pre_wear(item)` is the hook other components veto through** — a class restriction, an alignment
+rule, a minimum strength. It returns `(bool, str)`, allows by default, and is asked inside `wear()`, so
+every path that puts something on gets the veto — `restore_worn()` included. The reason reaches the
+caller unchanged, for the command to tell the player.
 
 | ID | Case | Test function |
 |---|---|---|
@@ -638,180 +634,125 @@ wearer that has no such place.
 | WE-04 | A later group is chosen when an earlier one is occupied | test_we_04_a_later_group_is_chosen_when_the_first_is_taken |
 | WE-05 | A partly-blocked group is skipped rather than partly filled | test_we_05_a_partly_blocked_group_is_not_partly_filled |
 | WE-06 | A group naming a slot this wearer does not have is skipped | test_we_06_a_group_naming_a_missing_slot_is_skipped |
-| WE-07 | An item not in contents is refused | test_we_07_an_item_not_in_contents_is_refused |
-| WE-08 | An item already worn is refused | test_we_08_an_item_already_worn_is_refused |
-| WE-09 | An item declaring no slots is refused | test_we_09_an_item_declaring_no_slots_is_refused |
-| WE-10 | Wearing is refused when no group is usable | test_we_10_wearing_is_refused_when_no_group_is_usable |
 | WE-11 | Wearing does not move the item out of contents | test_we_11_wearing_does_not_move_the_item |
 | WE-12 | Wearing does not change the carried weight | test_we_12_wearing_does_not_change_the_carried_weight |
-| WE-13 | Both outcomes return a message | test_we_13_both_outcomes_return_a_message |
-| WE-14 | A string naming a carried item wears it | test_we_14_a_string_naming_a_carried_item_wears_it |
-| WE-15 | Matching ignores case | test_we_15_matching_ignores_case |
-| WE-16 | A string matching part of a key matches that item | test_we_16_a_substring_of_the_key_matches |
-| WE-17 | A string matching nothing is refused as not carried | test_we_17_a_string_matching_nothing_is_refused_as_not_carried |
-| WE-18 | A string matching only a worn item is refused as already worn | test_we_18_a_string_matching_only_a_worn_item_says_already_worn |
-| WE-19 | Of several matches sharing a key, the first is worn | test_we_19_of_several_matches_sharing_a_key_the_first_is_worn |
-| WE-20 | Matches with differing keys are refused with the word that was typed | test_we_20_matches_with_differing_keys_are_refused_with_the_typed_word |
-| WE-21 | A carried item wins over a worn one matching the same string | test_we_21_a_carried_item_wins_over_a_worn_one |
-| WE-22 | An object is worn without being resolved | test_we_22_an_object_is_worn_without_being_resolved |
 | WE-23 | A named slot is chosen over an earlier free group | test_we_23_a_named_slot_is_chosen_over_an_earlier_free_group |
 | WE-24 | Naming one slot of a multi-slot group fills the whole group | test_we_24_naming_one_slot_of_a_group_fills_the_whole_group |
-| WE-25 | A named slot the item does not declare is refused | test_we_25_a_named_slot_the_item_does_not_declare_is_refused |
-| WE-26 | A named slot this wearer does not have is refused | test_we_26_a_named_slot_this_wearer_does_not_have_is_refused |
-| WE-27 | A named slot that is already occupied is refused | test_we_27_a_named_slot_already_occupied_is_refused |
-| WE-28 | A slot named as an enum member works as its value does | test_we_28_a_slot_named_as_an_enum_member_works |
-| WE-29 | A slot can be named while the item is given as a string | test_we_29_a_slot_can_be_named_while_the_item_is_a_string |
 | WE-30 | `at_pre_wear()` allows wearing by default | test_we_30_at_pre_wear_allows_by_default |
 | WE-31 | A consumer refusing stops the wearing and fills no slot | test_we_31_a_consumer_refusing_stops_the_wearing |
-| WE-32 | The consumer's reason is what `wear()` returns | test_we_32_the_consumers_reason_is_returned |
+| WE-32 | The consumer's reason is what `wear()` returns, with `False` | test_we_32_the_consumers_reason_is_returned |
 | WE-33 | `at_post_wear()` sees the slots already filled | test_we_33_at_post_wear_sees_the_slots_already_filled |
 | WE-34 | `at_post_wear()` receives the slots that were filled | test_we_34_at_post_wear_receives_the_slots_filled |
 | WE-35 | `at_post_wear()` does not fire when wearing is refused | test_we_35_at_post_wear_does_not_fire_when_refused |
 | WE-36 | `restore_worn()` fires `at_post_wear()` for each item put back | test_we_36_restore_worn_fires_at_post_wear |
+| WE-37 | `slots_for()` returns the group `wear()` fills, and changes nothing | test_we_37_slots_for_returns_the_group_wear_fills |
+| WE-38 | `slots_for()` returns `None` for an item declaring no slots | test_we_38_slots_for_is_none_for_an_item_declaring_no_slots |
+| WE-39 | `slots_for()` returns `None` when no group is free | test_we_39_slots_for_is_none_when_no_group_is_free |
+| WE-40 | `slots_for()` returns `None` for a named slot the item does not declare | test_we_40_slots_for_is_none_for_a_slot_the_item_does_not_declare |
+| WE-41 | `slots_for()` returns `None` for a named slot this wearer does not have | test_we_41_slots_for_is_none_for_a_slot_this_wearer_does_not_have |
+| WE-42 | `slots_for()` returns `None` for a named slot of a multi-slot group when another slot in the group is occupied | test_we_42_slots_for_is_none_when_a_named_group_is_partly_occupied |
+| WE-43 | Wearing an item not in contents raises `ValueError`, fills no slot, and `at_post_wear()` does not fire | test_we_43_wearing_an_item_not_in_contents_raises |
+| WE-44 | Wearing an item already worn raises `ValueError`, changes no slot, and `at_post_wear()` does not fire | test_we_44_wearing_an_item_already_worn_raises |
+| WE-45 | Wearing with no free group raises `ValueError`, fills no slot, and `at_post_wear()` does not fire | test_we_45_wearing_with_no_free_group_raises |
+| WE-47 | Wearing that goes through returns `(True, "")` | test_we_47_wearing_that_goes_through_returns_true_and_no_reason |
 
 `WE-05` is the one that bites if the implementation fills slots as it checks them: a group that turns
 out to be blocked half-way through would leave the wearer holding an item in some of its slots and
-not others. Selection has to complete before anything is written.
+not others. Selection completes before anything is written.
 
 `WE-12` ties back to the carrying half. Wearing moves a reference, not an object, so the total must
 not shift — which is why the two mixins compose without either knowing about the other.
 
-`WE-13` pins the contract the command layer depends on: the mixin answers, the command speaks.
-
-`WE-18` is the case a single-pass implementation gets wrong. Matching only the unworn items and
-stopping there tells a player wearing the helmet that they are not carrying it, which is both false and
-useless. It is the reason resolution is two ordered passes rather than one filter.
-
-`WE-21` is the same ordering seen from the other side, and the reason the passes are ordered rather
-than merged. A player wearing one iron ring and carrying another means `wear ring` while dressed; the
-carried one is the only one that can be worn, and a merged pass could return either.
-
-`WE-19` and `WE-20` are the two halves of "several matched". Interchangeable items are an answer, not a
-question — asking which of two identical rings is wanted has no answer a player can give. Differently
-named ones are a real question, and `WE-20` pins that the reply quotes what was typed rather than
-listing candidates.
-
-`WE-22` keeps the object path intact. `restore_worn()` and a consumer equipping a freshly created item
-both hold the object already, and resolving by key would be ambiguous exactly where objects are not.
-
 `WE-23` is the case the argument exists for, and the one an implementation that merely *checks* the
-named slot would pass by accident. A ring with both fingers free must go on the one that was asked for,
+named slot would pass by accident. A ring with both fingers free goes on the one that was asked for,
 not the one declared first.
 
 `WE-24` fixes what naming a slot means: the group containing it, not the slot alone. A greatsword
-named by one hand still takes both, because a group is taken together or not at all — the same rule
-`WE-05` pins for the unnamed case.
+named by one hand still takes both.
 
-`WE-25` and `WE-26` are separate because the answers are. "That cannot go there" is about the item;
-"you have no such place" is about the wearer, and it is what a player naming a slot the game does not
-give them needs to hear. One message for both would be wrong half the time.
+`WE-37` is the agreement between the caller's check and the placement. A command that asks
+`slots_for()`, then calls `wear()`, gets the group it was told about — and asking changes nothing, so
+a command may ask and then stop.
 
-`WE-28` is a trap that would otherwise bite once per consumer. A game declares `body_slots` with enum
-members and reads `worn_items` keyed by their values, so whichever the library demanded would be the
-other one to somebody.
+`WE-40` and `WE-41` are separate paths to `None`: the item declaring no group with that slot, and the
+wearer lacking the slot. The caller tells them apart for its message; both have to answer `None`.
 
-**The four hooks.** `at_pre_wear(item)` and `at_pre_remove(item)` return `(bool, str)` and can refuse;
-`at_post_wear(item, slots)` and `at_post_remove(item, slots)` return nothing and fire only on success.
-The library refuses nothing of its own in any of them.
+`WE-42` is the two-handed sword wielded by the right hand while the left holds something. It is the
+narrowing and the all-free rule together.
+
+`WE-44` is the ring on both hands. Without it, a ring already on the left finger has a free group
+left, and `wear()` would put it on the right as well.
+
+`WE-47` is the success half of the return. The reason is empty: the command writes its own success
+line.
+
+**The four hooks.** `at_pre_wear(item)` and `at_pre_remove(item)` return `(bool, str)`, allow by
+default, and are asked inside `wear()` and `remove()`, after the guards and before anything is written.
+`at_post_wear(item, slots)` and `at_post_remove(item, slots)` return nothing and fire once the slots are
+written, only when the call went through. The library refuses
+nothing of its own in any of them.
 
 They exist because equipment changes a character. A ring of strength is worth nothing until something
 recalculates the wearer's strength, and that has to happen on both edges — the library has no idea what
 a consumer's stats are, and a consumer has no other moment to learn that the set of worn items changed.
 
 `WE-33` is the ordering that makes them usable: the slots are already written when `at_post_wear` runs,
-so a consumer recalculating from `get_all_worn()` sees the item it was told about. Firing before the
-write would give a hook that has to be told the answer twice.
+so a consumer recalculating from `get_all_worn()` sees the item it was told about.
 
 `WE-34` is why the slots are passed. A consumer can read `worn_items` at post-wear, but `RM-33`'s
 mirror cannot — by then the slots are freed and where the item *was* exists nowhere else. Passing them
-on both sides keeps the pair symmetrical rather than making one of them the exception.
+on both sides keeps the pair symmetrical.
 
 `WE-36` is the case that matters after a shard move. Restoring rebuilds the worn set through `wear()`,
-so the bonuses come back with it — a restore that put the items on without firing the hooks would leave
-a character wearing a ring of strength and no stronger for it.
+so the bonuses come back with it.
+
+Retired: `WE-07` to `WE-10`, `WE-13` to `WE-22`, `WE-25` to `WE-29` and `WE-46`. Resolving a typed
+name, and refusing on anything but the hook, are the caller's now; a slot is an enum member. The IDs
+are not reused.
 
 ### RM — removing
 
 `remove(item)` frees every slot the item occupies and leaves it in `contents`. Taking something off
 does not put it down.
 
-**It takes a string or an object**, on the same reasoning as `wear()` and with the search mirrored: a
-string resolves against what the wearer has on, not what it carries. A command that had to find the
-object first would filter the worn items to get one, and then `remove()` would ask the slot map again
-to confirm what the caller had just established.
+**`item` is the object, already identified by the caller** — a command finds it by name or reads it
+out of a slot before calling. `remove()` identifies nothing.
 
-The passes are ordered the same way, and the second one is what makes the refusal useful:
+1. Gather every slot the item occupies, by identity.
+2. None — the item is not worn — raises. The caller should have settled that, so reaching here is a
+   caller bug.
+3. Ask `at_pre_remove(item)`. A refusal returns `(False, reason)`, and nothing changes.
+4. Write `worn_items` with those slots freed.
+5. Call `at_post_remove(item, slots)`.
+6. Return `(True, "")`.
 
-1. Match against what is worn. One or more results, that is the answer.
-2. Otherwise match against what is carried — a hit there means "you are not wearing that", which is a
-   better answer than "you have no such thing".
-3. Otherwise nothing matched.
-
-Several matches split the same way: items sharing a key are interchangeable, so the first comes off;
-differing keys are a question, and the reply echoes what was typed.
-
-**`slot=` names where to take it from**, and unlike `wear()` it can stand on its own — `remove(None,
-slot=...)` takes off whatever is in that slot. Wearing nothing into a slot means nothing, so `wear()`
-keeps its item required; taking off "whatever is on my right finger" is a complete instruction.
-
-| Call | Means |
-|---|---|
-| `remove("ring")` | the worn items matching, first if they share a key |
-| `remove("ring", slot="RIGHT_FINGER")` | that item, and only if it is in that slot |
-| `remove(None, slot="RIGHT_FINGER")` | whatever is in that slot |
-| `remove()` | neither — a caller bug, refused rather than guessed at |
-
-**Two identical rings is what it is for.** `Which one do you mean?` cannot help when both keys are the
-same, so naming the slot is the only way a player can say which hand. Nothing else on the surface
-solves it.
-
-It is `slot`, not `location`: `location` is Evennia's word for where an object *is*, and a worn ring's
-location is the wearer.
-
-`at_pre_remove(item)` is the one gate, returning `(bool, str)` — the same shape `remove()` returns, so
-a consumer's reason reaches the player rather than being replaced by something generic. It allows by
-default, and the library refuses nothing of its own.
+**`at_pre_remove(item)` is the hook other components veto through** — a curse, a paralysed wearer, a
+combat rule. It returns `(bool, str)`, allows by default, and is asked inside `remove()`, so every path
+that takes something off gets the veto. The reason reaches the caller unchanged, for the command to
+tell the player.
 
 **On the wearer rather than the item**, deliberately. A cursed item is the item's business, but "you
-are paralysed" or "not in combat" is the wearer's, and an item-side hook cannot express those. A
-consumer wanting item-side logic delegates to the item in one line; the reverse is not available.
+are paralysed" is the wearer's, and an item-side hook cannot express it. A consumer wanting item-side
+logic delegates to the item in one line.
 
 | ID | Case | Test function |
 |---|---|---|
 | RM-01 | Removing frees the slot | test_rm_01_removing_frees_the_slot |
 | RM-02 | Removing a multi-slot item frees every slot it occupied | test_rm_02_removing_frees_every_slot_it_occupied |
-| RM-03 | Removing an item that is not worn is refused | test_rm_03_removing_something_not_worn_is_refused |
 | RM-04 | Removing leaves the item in contents | test_rm_04_removing_leaves_the_item_in_contents |
 | RM-05 | Removing does not change the carried weight | test_rm_05_removing_does_not_change_the_carried_weight |
 | RM-06 | Other worn items are unaffected | test_rm_06_other_worn_items_are_unaffected |
 | RM-07 | A removed item can be worn again | test_rm_07_a_removed_item_can_be_worn_again |
-| RM-08 | Both outcomes return a message | test_rm_08_both_outcomes_return_a_message |
 | RM-09 | Removing one of two identical items frees only that one | test_rm_09_removing_one_of_two_identical_items_frees_only_that_one |
 | RM-10 | `at_pre_remove()` allows removal by default | test_rm_10_the_hook_allows_removal_by_default |
 | RM-11 | A consumer refusing stops the removal and the item stays worn | test_rm_11_a_consumer_refusing_stops_the_removal |
-| RM-12 | The consumer's reason is what `remove()` returns | test_rm_12_the_consumers_reason_is_returned |
+| RM-12 | The consumer's reason is what `remove()` returns, with `False` | test_rm_12_the_consumers_reason_is_returned |
 | RM-13 | The slots are untouched when removal is refused | test_rm_13_the_slots_are_untouched_when_removal_is_refused |
-| RM-14 | A string naming a worn item removes it | test_rm_14_a_string_naming_a_worn_item_removes_it |
-| RM-15 | Matching ignores case | test_rm_15_matching_ignores_case |
-| RM-16 | A string matching part of a key matches that item | test_rm_16_a_substring_of_the_key_matches |
-| RM-17 | A string matching nothing is refused | test_rm_17_a_string_matching_nothing_is_refused |
-| RM-18 | A string matching only a carried item is refused as not worn | test_rm_18_a_string_matching_only_a_carried_item_says_not_worn |
-| RM-19 | Of several matches sharing a key, the first is removed | test_rm_19_of_several_matches_sharing_a_key_the_first_is_removed |
-| RM-20 | Matches with differing keys are refused with the word that was typed | test_rm_20_matches_with_differing_keys_are_refused_with_the_typed_word |
-| RM-21 | A worn item wins over a carried one matching the same string | test_rm_21_a_worn_item_wins_over_a_carried_one |
-| RM-22 | An object is removed without being resolved | test_rm_22_an_object_is_removed_without_being_resolved |
-| RM-23 | A named slot alone removes whatever is in it | test_rm_23_a_named_slot_alone_removes_what_is_in_it |
-| RM-24 | Naming one slot of a multi-slot item frees every slot it occupied | test_rm_24_naming_one_slot_frees_every_slot_it_occupied |
-| RM-25 | A named slot this wearer does not have is refused | test_rm_25_a_named_slot_this_wearer_does_not_have_is_refused |
-| RM-26 | A named slot holding nothing is refused | test_rm_26_a_named_slot_holding_nothing_is_refused |
-| RM-27 | An item and a slot together remove that item from that slot | test_rm_27_an_item_and_a_slot_remove_that_item_from_that_slot |
-| RM-28 | An item worn somewhere other than the named slot is refused | test_rm_28_an_item_worn_elsewhere_than_the_named_slot_is_refused |
-| RM-29 | Of two items sharing a key, the one in the named slot is removed | test_rm_29_of_two_items_sharing_a_key_the_one_in_the_slot_is_removed |
-| RM-30 | A slot named as an enum member works as its value does | test_rm_30_a_slot_named_as_an_enum_member_works |
-| RM-31 | Neither an item nor a slot is refused | test_rm_31_neither_an_item_nor_a_slot_is_refused |
 | RM-32 | `at_post_remove()` sees the slots already freed | test_rm_32_at_post_remove_sees_the_slots_already_freed |
 | RM-33 | `at_post_remove()` receives the slots that were freed | test_rm_33_at_post_remove_receives_the_slots_freed |
 | RM-34 | `at_post_remove()` does not fire when removal is refused | test_rm_34_at_post_remove_does_not_fire_when_refused |
+| RM-35 | Removing an item that is not worn raises `ValueError`, the slots are untouched and `at_post_remove()` does not fire | test_rm_35_removing_an_item_not_worn_raises |
+| RM-37 | A removal that goes through returns `(True, "")` | test_rm_37_a_removal_that_goes_through_returns_true_and_no_reason |
 
 `RM-02` is the counterpart to `WE-02`: a two-handed item sits under two keys, and freeing only the
 first leaves a phantom holding the other hand for good.
@@ -822,49 +763,27 @@ while quietly stripping everything else the wearer had on.
 `RM-07` is the round trip. An item whose slots are freed but which is still referenced somewhere else
 reads as worn, so `wear()` refuses it — a failure neither `RM-01` nor `WE-08` sees on its own.
 
-`RM-13` is the counterpart to `WE-05`: a refusal must leave the slots exactly as they were, not
-half-freed.
-
 `RM-09` is about identity rather than equality. A consumer's typeclass may define `__eq__` — by key,
 or by a token id — and comparing slots with `==` would then clear every slot holding an item that
-merely *compares* equal. The library asks "is this the object in that slot", so the comparison is
-`is`, and this is the case that says so.
+merely *compares* equal. The comparison is `is`, and this is the case that says so.
 
-`RM-18` is `WE-18` seen from the other side, and the one a single-pass implementation gets wrong.
-Searching only the worn items tells a player holding the boots that no such thing exists, when the
-useful answer is that they are carrying them and not wearing them.
+`RM-13` is the counterpart to `WE-05`: a refusal leaves the slots exactly as they were, not
+half-freed.
 
-`RM-21` is the ordering that `RM-18` implies. Wearing one iron ring and carrying another, `remove ring`
-has exactly one sensible target, and a merged pass could return either.
+`RM-33` is the reason the post hooks are given slots at all. At post-remove the slots are freed, and
+where the item sat exists nowhere else.
 
-`RM-19` and `RM-20` are the two halves of "several matched", as `WE-19` and `WE-20` are for wearing.
-Asking which of two identical rings is meant has no answer a player can give; two differently named
-items do.
+`RM-34` is the pairing `WE-35` makes on the other side. A refused removal leaves a consumer's stats
+alone; a post hook that fired anyway would strip a ring's bonus from a character still wearing it.
 
-`RM-22` keeps the object path intact. A consumer stripping a specific item — a curse breaking, a
-scripted disarm — holds the object already, and resolving by key would be ambiguous exactly where
-objects are not.
+`RM-35` is the guard, and it comes before the hook. Without it an unworn item frees nothing and
+`at_post_remove()` still fires, telling the consumer to undo a bonus that was never applied.
 
-`RM-29` is the case the argument exists for, and the one nothing else on the surface can reach. Two
-rings with the same key, one on each hand: `remove ring` takes the first, and asking "which ring?"
-would have no answer a player could give. The slot is the only way to say which hand.
+`RM-37` is the success half of the return. The reason is empty: the command writes its own success
+line.
 
-`RM-24` mirrors `WE-24`. A slot names the item occupying it, and removing that item frees everywhere it
-sits — a greatsword named by one hand does not come half off.
-
-`RM-25` and `RM-26` are separate for the same reason `WE-25` and `WE-26` are. "You have no right
-finger" is about the wearer's body; "you are wearing nothing on your right finger" is about what is
-there now, and only the second invites the player to look again.
-
-`RM-31` is a caller bug rather than a player one — a command that failed to parse. It is refused rather
-than raised, so the contract stays `(bool, str)` and nothing reaches a player as a traceback.
-
-`RM-33` is the reason the post hooks are given slots at all. At post-wear a consumer could read
-`worn_items` instead; at post-remove it cannot, because the slots are freed by then and where the item
-sat exists nowhere else. See the hook notes under `WE`.
-
-`RM-34` is the pairing `WE-35` makes on the other side. A refused removal must leave a consumer's stats
-alone, and a post hook that fired anyway would strip a ring's bonus from a character still wearing it.
+Retired: `RM-03`, `RM-08`, `RM-14` to `RM-31` and `RM-36`. Resolving a typed name and taking a slot
+are the caller's now. The IDs are not reused.
 
 ### GW — what is worn
 
@@ -972,8 +891,18 @@ item, and a burst of these at archive time is the only signal before a restore c
 it after their own restore has put the items back — the library has no way to know when that is.
 
 **It walks `contents`, not the record.** An identity matching nothing is then never visited, so there
-is nothing to ignore explicitly and no case for it. Every outcome is a `(bool, str)` from `wear()`
-itself, so the library grows no second vocabulary for the same refusals.
+is nothing to ignore explicitly and no case for it.
+
+For each item it finds, it is a caller of `wear()` like any other:
+
+1. Already worn — refused, `already wearing`.
+2. `slots_for(item)` is `None` — refused, `nowhere to wear`.
+3. Otherwise `wear(item)`, with no slot: the item goes into its default group. `at_pre_wear` is asked
+   there, and its refusal comes back as `(False, reason)`.
+
+Every outcome is a `(bool, str)`, returned in a list and never sent to the player — a refusal just
+leaves the item carried. The record holds identities, not slots, so a ring worn on the right finger
+can come back on the left.
 
 **Order does not matter.** The items all fitted simultaneously when the record was written, so they
 all fit now, whatever order `contents` gives them. No sorting, no second pass, no rollback.
@@ -982,12 +911,13 @@ all fit now, whatever order `contents` gives them. No sorting, no second pass, n
 |---|---|---|
 | RW-01 | An item whose identity is in the record is worn | test_rw_01_an_item_in_the_record_is_worn |
 | RW-02 | An item not named in the record stays carried | test_rw_02_an_item_not_in_the_record_stays_carried |
-| RW-03 | An item already worn returns `wear()`'s refusal | test_rw_03_an_item_already_worn_returns_wears_refusal |
-| RW-04 | An item that cannot be worn returns `wear()`'s refusal | test_rw_04_an_item_that_cannot_be_worn_returns_wears_refusal |
+| RW-03 | An item already worn is refused, not raised, and the refusal says so | test_rw_03_an_item_already_worn_is_refused |
+| RW-04 | An item with nowhere to go is refused, not raised, and stays carried | test_rw_04_an_item_with_nowhere_to_go_is_refused |
 | RW-05 | The record is unchanged by restoring | test_rw_05_the_record_is_unchanged_by_restoring |
 | RW-06 | An item that is not wearable at all is passed over | test_rw_06_an_item_that_is_not_wearable_is_passed_over |
 | RW-07 | A refused restore logs an INFO naming the wearer, the item and the refusal | test_rw_07_a_refused_restore_is_logged |
 | RW-08 | A restore where every item goes on logs nothing | test_rw_08_a_clean_restore_logs_nothing |
+| RW-09 | An `at_pre_wear()` refusal is returned, and the item stays carried | test_rw_09_an_at_pre_wear_refusal_is_returned |
 
 `RW-04`'s real trigger is a slot removed from `body_slots` since the record was written. The item comes
 back carried rather than worn, and the refusal says why — which is the whole diagnostic a consumer
@@ -1005,6 +935,9 @@ raises rather than returning `None`.
 underneath it, and the same refusal is already returned to the caller. The log line is durability —
 it survives a consumer that discards the list, so "my gear came back unworn" can be looked up.
 `RW-08` is the noise guard: a clean restore is the ordinary case and says nothing.
+
+`RW-09` is the hook path. A restriction that changed since the record was written — a class the
+character no longer has — keeps the item off, the same as it would through a command.
 
 A returned list of refusals is also the only signal that `EQUIPMENT_IDENTITY_ATTRIBUTE` names
 something the game's items do not carry — every identity is then `None`, the record is empty, and
@@ -1055,102 +988,234 @@ The end-to-end proof stays where it is — `GW`, `GC`, `RW` and the weight cases
 through the methods that use them. The cases above cover them as published units a consumer can pick up
 on their own.
 
+### FC — finding something carried
+
+`finders.find_carried(caller, text)` finds the item `text` names among what `caller` carries and is
+not wearing. It is for any command that acts on something in a player's inventory — wearing it,
+enchanting it, giving it away.
+
+Returns `(item, None)`, or `(None, refusal)` with a finished message. It messages no one: the command
+speaks.
+
+1. `text` empty — refused, rather than matching everything.
+2. Candidates are the caller's carried items: `walk_contents` over `op_not(f_worn_by(caller))`.
+3. Matching is Evennia's own, `caller.search(text, candidates=..., quiet=True)` — key or alias, any
+   case, and `sword-2` for the second of several.
+4. One match, or several sharing a key, is the answer — items sharing a key are interchangeable, so the
+   first is taken.
+5. Several with differing keys — refused, `Which <text> do you mean?`.
+6. None carried, but a worn item matches — refused naming the worn item, which is a more useful answer
+   than "not carrying".
+7. Nothing matches — refused, `You are not carrying <text>.`
+
+| ID | Case | Test function |
+|---|---|---|
+| FC-01 | A name matching one carried item returns it | test_fc_01_a_name_matching_one_carried_item_returns_it |
+| FC-02 | A worn item is never returned | test_fc_02_a_worn_item_is_never_returned |
+| FC-03 | A name matches through `caller.search` — an alias matches, in any case | test_fc_03_a_name_matches_through_caller_search |
+| FC-04 | Several carried items sharing a key return the first | test_fc_04_several_sharing_a_key_return_the_first |
+| FC-05 | Several with differing keys are refused, asking which, with what was typed | test_fc_05_differing_keys_are_refused_asking_which |
+| FC-06 | `<name>-2` returns the second of several | test_fc_06_a_numbered_name_returns_that_one |
+| FC-07 | A name matching only a worn item is refused, naming that item as worn | test_fc_07_a_name_matching_only_a_worn_item_says_it_is_worn |
+| FC-08 | A name matching nothing is refused, with what was typed | test_fc_08_a_name_matching_nothing_is_refused |
+| FC-09 | Empty text is refused | test_fc_09_empty_text_is_refused |
+| FC-10 | Nothing is sent to the caller | test_fc_10_nothing_is_sent_to_the_caller |
+| FC-11 | A `#dbref` of something not carried is not found, even for a caller allowed dbref searches | test_fc_11_a_dbref_of_something_not_carried_is_not_found |
+
+`FC-03` pins that the matching is Evennia's, not this library's. Exact-before-partial and word starts
+are `caller.search`'s to prove.
+
+`FC-06` is what `caller.search` buys over a plain key filter: the only way a player can pick between
+two identical items without naming a slot.
+
+`FC-07` is the two-place answer. A player wearing the helmet and typing `wear helmet` is told they are
+wearing it, not that they have no such thing.
+
+`FC-10` is the `quiet=True`. Without it `caller.search` messages the caller itself, and the command's
+refusal arrives as a second message.
+
+`FC-11` is the `use_dbref=False`. A `#dbref` makes Evennia's search global and ignores the candidates,
+so a builder typing `enchant #12` would otherwise get an object from anywhere in the game. The caller
+has Builder permission, because that is who dbref searches are open to.
+
+### FW — finding something worn
+
+`finders.find_worn(caller, text)` is `find_carried()`'s mirror: the item `text` names among what
+`caller` is wearing. The candidates are `walk_contents` over `f_worn_by(caller)`; the matching, the
+return shape and the silence are the same.
+
+A name matching only a carried item is refused naming it as not worn; nothing matching is refused as
+not carried.
+
+| ID | Case | Test function |
+|---|---|---|
+| FW-01 | A name matching one worn item returns it | test_fw_01_a_name_matching_one_worn_item_returns_it |
+| FW-02 | A carried item that is not worn is never returned | test_fw_02_a_carried_item_is_never_returned |
+| FW-03 | Several worn items sharing a key return the first | test_fw_03_several_sharing_a_key_return_the_first |
+| FW-04 | Several with differing keys are refused, asking which, with what was typed | test_fw_04_differing_keys_are_refused_asking_which |
+| FW-05 | `<name>-2` returns the second of several | test_fw_05_a_numbered_name_returns_that_one |
+| FW-06 | A name matching only a carried item is refused, naming that item as not worn | test_fw_06_a_name_matching_only_a_carried_item_says_not_worn |
+| FW-07 | A name matching nothing is refused, with what was typed | test_fw_07_a_name_matching_nothing_is_refused |
+| FW-08 | Empty text is refused | test_fw_08_empty_text_is_refused |
+| FW-09 | Nothing is sent to the caller | test_fw_09_nothing_is_sent_to_the_caller |
+
+`FW-06` is `FC-07` from the other side: a player holding the boots and typing `remove boots` is told
+they are not wearing them.
+
+### MS — matching a typed slot name
+
+`finders.match_slot(caller, text)` turns what a player typed into a member of the slot enum, from the
+slots `caller` actually has.
+
+Returns `(member, None)`, or `(None, refusal)`. The member is what `wear()` and `slots_for()` take.
+
+**The matching is `evennia_targeting.parse_match(..., substring=True)`** over the keys of the caller's
+`worn_items`. It ignores case, spaces, underscores and hyphens, so `left ring finger` and
+`LEFT_RING_FINGER` are the same. One match is the answer. Several are refused, naming them — lowercased,
+underscores as spaces. None is refused naming what was typed.
+
+**It matches this caller's slots, not the whole enum.** A humanoid typing `pet neck` is told it has
+none.
+
+| ID | Case | Test function |
+|---|---|---|
+| MS-01 | Case and separators are ignored, and the enum member comes back | test_ms_01_case_and_separators_are_ignored_and_the_member_returned |
+| MS-02 | Text matching several of the caller's slots is refused, naming them | test_ms_02_several_matches_are_refused_and_named |
+| MS-03 | Text matching no slot is refused, with what was typed | test_ms_03_text_matching_no_slot_is_refused |
+| MS-04 | A slot the enum has but this caller lacks is refused as matching nothing | test_ms_04_a_slot_this_caller_lacks_is_refused |
+| MS-05 | Empty text is refused | test_ms_05_empty_text_is_refused |
+
+`MS-01` pins the member, not the string. `wear()` takes a member, and a string handed on would fail
+there rather than here.
+
+`MS-04` is what "this caller's slots" means, and the case that fails if the matcher reaches for the
+whole enum.
+
+`MS-05` guards `wear ring on ` — an empty string matched as a substring would hit every slot.
+
+The exact, word-start and substring order is `parse_match`'s, covered by its `PM` cases in
+`evennia-targeting`.
+
 ### NS — retired
 
 Retired: `NS-01` to `NS-08`. Ignoring case, spaces, underscores and hyphens when a typed slot name is
 compared is `evennia_targeting.parse_match`'s, and its `PM` cases cover it.
 
-### SM — matching a typed slot name
+### SM — retired
 
-`contrib.utils.match_slot(wearer, text)` turns what a player typed into a slot name this wearer
-actually has, or says why it cannot.
+Retired: `SM-02` and `SM-05` to `SM-08`, with `contrib.utils.match_slot()`. Matching a typed slot name
+is the core `finders.match_slot()`'s, and its `MS` cases cover it.
 
-Returns `(slot_name, None)` or `(None, refusal)` — the same shape `_resolve_wearable()` uses, so a
-command reads the same whether it is resolving an item or a slot. The refusal is a finished message.
+### UW — resolving what to wear
 
-**The matching is `evennia_targeting.parse_match(..., substring=True)`** over this wearer's slot
-names. It ignores case, spaces, underscores and hyphens, so how the consumer spelled the enum stops
-mattering. The order:
+`contrib.utils.resolve_wear(caller, text)` turns what a player typed after `wear` into the item and the
+slot `wear()` takes.
 
-1. An exact match wins outright. A game with both `HAND` and `LEFT_HAND` needs this, or `hand` can
-   never mean `HAND`.
-2. Otherwise the start of any word of a name — `hand` finds `LEFT_HAND`.
-3. Otherwise substring.
-4. One hit is the answer. Several are a question, and the refusal **names them** — `Which do you mean
-   — left hand or right hand?` — in display form, lowercased with underscores as spaces.
-5. No hits is a refusal naming what was typed.
+Returns `((item, slot), None)`, or `(None, refusal)`. `slot` is an enum member, or `None` when none was
+named.
 
-**It matches this wearer's slots, not the whole enum.** A humanoid asking for a dog neck is told it has
-none rather than told it is ambiguous, and a one-fingered creature is never asked which finger.
+1. `parse_split(text, "on")` — the item text, and the slot text if `on` was typed.
+2. Slot text given — `finders.match_slot()`. Its refusal is returned unchanged. The slot is matched
+   first, so a mistyped slot never reaches the item lookup.
+3. `finders.find_carried()` on the item text. Its refusal is returned unchanged.
 
 | ID | Case | Test function |
 |---|---|---|
-| SM-02 | Case and separators are ignored, and the real name comes back | test_sm_02_case_and_separators_are_ignored |
-| SM-05 | A substring matching several slots is refused, and the refusal names them | test_sm_05_several_matches_are_refused_and_named |
-| SM-06 | Text matching no slot is refused | test_sm_06_text_matching_no_slot_is_refused |
-| SM-07 | A slot the game has but this wearer lacks is refused | test_sm_07_a_slot_this_wearer_lacks_is_refused |
-| SM-08 | Empty text is refused rather than matching everything | test_sm_08_empty_text_is_refused |
+| UW-01 | An item name alone returns the carried item and no slot | test_uw_01_an_item_name_alone_returns_the_item_and_no_slot |
+| UW-02 | `<item> on <slot>` returns the item and the slot's enum member | test_uw_02_an_item_on_a_slot_returns_both |
+| UW-03 | A slot that matches nothing is refused with `match_slot()`'s refusal | test_uw_03_a_slot_matching_nothing_is_refused_with_match_slots_refusal |
+| UW-04 | An item that is not carried is refused with `find_carried()`'s refusal | test_uw_04_an_item_not_carried_is_refused_with_find_carrieds_refusal |
 
-`SM-02` pins that what comes back is the **real** slot name — `LEFT_HAND`, however it was typed. Only
-the real one can be passed to `wear()`.
+How the text splits — the last whole-word `on`, in any case — is `parse_split`'s, covered by its own
+cases in `evennia-targeting`.
 
-`SM-05` differs from how the item match handles ambiguity, deliberately. Items are not listed because a
-match could run to five; a wearer has ten slots in total and a substring rarely hits more than two, so
-naming them tells the player exactly which words will work.
+### UR — resolving what to remove
 
-`SM-07` is what "this wearer's slots, not the whole enum" means in practice, and it is the case that
-fails if the matcher reaches for `valid_slot_names()`.
+`contrib.utils.resolve_remove(caller, text)` turns what a player typed after `remove` into the item
+`remove()` takes.
 
-`SM-08` guards the empty string reaching here from `wear ring on `. Matched as a substring it would hit
-every slot; the answer is a refusal, not a list of everything the wearer has.
+Returns `(item, None)`, or `(None, refusal)`.
 
-Retired: `SM-01`, `SM-03` and `SM-04` — the exact, substring and exact-before-substring steps. They are
-`parse_match`'s, and its `PM` cases in `evennia-targeting` cover them.
+1. `parse_split(text, "from")` — the item text, and the slot text if `from` was typed. Nothing before
+   `from` is the slot-only form.
+2. Slot text given — `finders.match_slot()`, then the item in that slot. An empty slot is refused.
+   With item text too, the item in the slot must match it: that is how a player says which of two
+   identical rings.
+3. No slot — `finders.find_worn()` on the item text. Its refusal is returned unchanged.
+
+| ID | Case | Test function |
+|---|---|---|
+| UR-01 | An item name alone returns the worn item | test_ur_01_an_item_name_alone_returns_the_worn_item |
+| UR-02 | `from <slot>` returns whatever is in that slot | test_ur_02_a_slot_alone_returns_what_is_in_it |
+| UR-03 | `<item> from <slot>` returns the item in that slot, of two sharing a key | test_ur_03_an_item_from_a_slot_returns_the_one_in_that_slot |
+| UR-04 | `from <slot>` on an empty slot is refused | test_ur_04_an_empty_slot_is_refused |
+| UR-05 | `<item> from <slot>`, with something else in the slot, is refused | test_ur_05_a_slot_holding_something_else_is_refused |
+| UR-06 | A slot that matches nothing is refused with `match_slot()`'s refusal | test_ur_06_a_slot_matching_nothing_is_refused_with_match_slots_refusal |
+| UR-07 | An item that is not worn is refused with `find_worn()`'s refusal | test_ur_07_an_item_not_worn_is_refused_with_find_worns_refusal |
+
+`UR-03` is the case the slot form exists for. Two rings sharing a key, one on each hand: the name alone
+takes the first, and the slot is the only way to say which.
 
 ### CW — the wear command
+
+`contrib.commands.CmdWearMixin` is the command's behaviour, for a game to compose onto its own command
+class:
+
+```python
+class CmdWear(CmdWearMixin, Command):
+    key = "wear"
+```
+
+`contrib.commands.CmdWear` is exactly that over Evennia's `Command`, so `EquipmentCmdSet` still works
+as it ships.
 
 ```
 wear <item>
 wear <item> on <slot>
 ```
 
-The command parses, speaks and broadcasts. Everything else is already answered: `match_slot()` turns
-the slot text into a name, and `wear()` resolves the item, chooses the slots and returns the message.
+1. No argument — `Wear what?`.
+2. `resolve_wear()`. A refusal is told to the caller.
+3. `slots_for(item, slot)` is `None` — refused: not wearable at all, can't go on the named slot, or
+   nowhere free.
+4. `wear(item, slot)`. `at_pre_wear`'s refusal is told to the caller unchanged.
+5. The caller is told they wear it, `announce(item)` tells the room, and `at_success(item)` runs.
 
-**It says almost nothing of its own.** The refusals a player sees come from the mixin or the matcher
-verbatim, so there is one wording for "you are already wearing that" rather than one per command.
-
-**The argument splits on the last ` on `.** An item may contain the word — *a ring on a chain* — and
-splitting on the first would take the chain for a slot. Splitting on the last is right whenever a slot
-was named at all, and is the case the syntax exists for.
+**Two seams, each doing one job.** `announce(item)` tells the room, with `msg_contents` by default; a
+game with its own messaging overrides it. `at_success(item)` does nothing by default; a game whose
+wearing costs a turn in a fight starts its time wait there. Both run only when the item went on.
 
 | ID | Case | Test function |
 |---|---|---|
 | CW-01 | No argument asks what to wear | test_cw_01_no_argument_asks_what_to_wear |
 | CW-02 | An item name wears it and tells the player | test_cw_02_an_item_name_wears_it |
-| CW-03 | A refusal from the mixin reaches the player unchanged | test_cw_03_a_refusal_reaches_the_player_unchanged |
+| CW-03 | An `at_pre_wear` refusal reaches the player unchanged | test_cw_03_an_at_pre_wear_refusal_reaches_the_player_unchanged |
 | CW-04 | `on <slot>` wears it in that slot | test_cw_04_on_a_slot_wears_it_there |
 | CW-05 | A slot matching nothing is refused, and nothing is worn | test_cw_05_a_slot_matching_nothing_wears_nothing |
 | CW-06 | `on` with nothing after it is refused | test_cw_06_on_with_nothing_after_it_is_refused |
 | CW-07 | The room is told, and the wearer is not told twice | test_cw_07_the_room_is_told_and_the_wearer_is_not_told_twice |
-| CW-08 | Only the last ` on ` splits the argument | test_cw_08_only_the_last_on_splits_the_argument |
-| CW-09 | ` on ` splits the argument in any case — `wear ring ON right hand` wears it there. Split with `evennia_targeting.parse_split` | test_cw_09_on_splits_the_argument_in_any_case |
+| CW-10 | An item with nowhere free is refused, and nothing is worn | test_cw_10_an_item_with_nowhere_free_is_refused |
+| CW-11 | An item that declares no slots is refused as not wearable | test_cw_11_an_item_declaring_no_slots_is_refused_as_not_wearable |
+| CW-12 | An item that cannot go on the named slot is refused, naming the slot | test_cw_12_an_item_that_cannot_go_on_the_named_slot_is_refused |
+| CW-13 | The room is told the item's name, not what was typed | test_cw_13_the_room_is_told_the_items_name_not_what_was_typed |
+| CW-14 | `announce()` is the room line: overriding it replaces the default | test_cw_14_announce_is_the_room_line |
+| CW-15 | `at_success()` runs once when the item goes on, and not on a refusal | test_cw_15_at_success_runs_once_on_success_and_not_on_a_refusal |
+| CW-16 | `CmdWear` is `CmdWearMixin` over Evennia's `Command` | test_cw_16_cmdwear_is_the_mixin_over_evennias_command |
 
-`CW-05` is ordered deliberately: the slot is matched **before** `wear()` is called, so a mistyped slot
-never puts the item on somewhere else. Matching after would wear it first and then complain.
+`CW-07` asserts both halves. `self.call(..., receiver=)` returns only the receiver's output, so the
+wearer being told twice is invisible to it — the caller's own output is captured separately and the
+phrase counted.
 
-`CW-07` is what makes it a MUD command rather than a function call. The wearer gets the mixin's
-message; everyone else in the room sees the action, and the wearer must not receive both.
+`CW-13` is `wear helm`, typed for an iron helmet. The room reads the helmet.
 
-`CW-08` pins the split rule with an item whose own name contains ` on `. It is the case that fails on
-`partition()` and passes on `rpartition()`.
+`CW-15` is where a game's time wait goes. Running on a refusal would charge a turn for nothing.
 
-**Known limitation, deliberately uncovered.** `wear ring on a chain` — where the whole thing is the
-item's name and no slot was meant — reads the chain as a slot and refuses. Nothing in the string says
-which was intended. A player types `wear ring on a chain on left finger`, or names the item less
-ambiguously.
+Retired: `CW-08` and `CW-09`. How the argument splits is `parse_split`'s.
 
 ### CM — the remove command
+
+`contrib.commands.CmdRemoveMixin`, and `contrib.commands.CmdRemove` over Evennia's `Command`, as for
+wearing.
 
 ```
 remove <item>
@@ -1158,43 +1223,37 @@ remove <item> from <slot>
 remove from <slot>
 ```
 
-The mirror of `CmdWear`, with one form it has no counterpart to: **naming only a slot.** Wearing
-nothing into a slot means nothing, but taking off whatever is on the right finger is a complete
-instruction, and `remove()` already accepts it.
-
-The parse has to reach that third form. `remove from right finger` leaves ` from right finger` as the
-argument, and a split on ` from ` never sees a leading separator — so an argument that *starts* with
-`from ` is a slot with no item, and only what remains goes through the usual split on the last
-` from `.
+1. No argument — `Remove what?`.
+2. `resolve_remove()`. A refusal is told to the caller.
+3. `remove(item)`. `at_pre_remove`'s refusal is told to the caller unchanged.
+4. The caller is told they remove it, `announce(item)` tells the room, and `at_success(item)` runs.
 
 | ID | Case | Test function |
 |---|---|---|
 | CM-01 | No argument asks what to remove | test_cm_01_no_argument_asks_what_to_remove |
 | CM-02 | An item name removes it and tells the player | test_cm_02_an_item_name_removes_it |
-| CM-03 | A refusal from the mixin reaches the player unchanged | test_cm_03_a_refusal_reaches_the_player_unchanged |
+| CM-03 | An `at_pre_remove` refusal reaches the player unchanged | test_cm_03_an_at_pre_remove_refusal_reaches_the_player_unchanged |
 | CM-04 | An item and a slot together remove that item from that slot | test_cm_04_an_item_and_a_slot_remove_from_that_slot |
 | CM-05 | A slot alone removes whatever is in it | test_cm_05_a_slot_alone_removes_what_is_in_it |
 | CM-06 | A slot matching nothing is refused, and nothing comes off | test_cm_06_a_slot_matching_nothing_removes_nothing |
 | CM-07 | `from` with nothing after it is refused | test_cm_07_from_with_nothing_after_it_is_refused |
 | CM-08 | The room is told, and the wearer is not told twice | test_cm_08_the_room_is_told_and_the_wearer_is_not_told_twice |
-| CM-09 | Only the last ` from ` splits the argument | test_cm_09_only_the_last_from_splits_the_argument |
-| CM-10 | ` from ` splits the argument in any case — `remove ring FROM left hand` removes it. Split with `evennia_targeting.parse_split` | test_cm_10_from_splits_the_argument_in_any_case |
+| CM-11 | The room is told the item's name, not the slot that was typed | test_cm_11_the_room_is_told_the_items_name_not_the_slot |
+| CM-12 | `announce()` is the room line: overriding it replaces the default | test_cm_12_announce_is_the_room_line |
+| CM-13 | `at_success()` runs once when the item comes off, and not on a refusal | test_cm_13_at_success_runs_once_on_success_and_not_on_a_refusal |
+| CM-14 | `CmdRemove` is `CmdRemoveMixin` over Evennia's `Command` | test_cm_14_cmdremove_is_the_mixin_over_evennias_command |
 
-`CM-05` is the form the whole slot argument was added for. Two rings with the same key, one on each
-hand, and `remove ring` takes whichever came first — `remove from right hand` is how a player says
-which.
+`CM-05` is the form the slot argument was added for. Two rings with the same key, one on each hand —
+`remove from right hand` is how a player says which.
 
-`CM-06` is ordered like `CW-05`: the slot is matched **before** `remove()` is called, so a mistyped
-slot never strips something else first.
+`CM-11` is `remove from left hand`. The room reads the ring, not a hand.
 
-`CM-08` asserts both halves, which `CW-07` did not until it was mutation-checked. `self.call(...,
-receiver=)` returns only the receiver's output, so the wearer being told twice is invisible to it —
-the caller's own output has to be captured separately and the phrase counted.
-
-`CM-09` pins the split with an item whose name contains ` from `. The same rule as `CW-08`, and the
-same consequence: a wearable's name should hold neither ` on ` nor ` from ` as a spaced word.
+Retired: `CM-09` and `CM-10`. How the argument splits is `parse_split`'s.
 
 ### CE — the equipment command
+
+`contrib.commands.CmdEquipmentMixin` is the command's behaviour, for a game to compose onto its own
+command class, and `CmdEquipment` is that mixin over Evennia's `Command`, as for wearing.
 
 ```
 equipment
@@ -1234,6 +1293,7 @@ information, and a word for it would be noise on every line a player has not fil
 | CE-06 | A multi-slot item appears under every slot it fills | test_ce_06_a_multi_slot_item_appears_under_every_slot |
 | CE-07 | Slot names are title-cased with underscores as spaces | test_ce_07_slot_names_are_title_cased_without_underscores |
 | CE-08 | Item names align to the longest slot name | test_ce_08_item_names_align_to_the_longest_slot_name |
+| CE-09 | `CmdEquipment` is `CmdEquipmentMixin` over Evennia's `Command` | test_ce_09_cmdequipment_is_the_mixin_over_evennias_command |
 
 `CE-02` matters because `worn_items` is rebuilt in `body_slots` order by `at_init()`, and a sheet that
 reordered them would make a familiar list unreadable after a slot was added.
@@ -1249,6 +1309,9 @@ Collapsing it is a judgement about wording, which is the consumer's.
 width smaller than the longest name.
 
 ### CI — the inventory command
+
+`contrib.commands.CmdInventoryMixin` is the command's behaviour, for a game to compose onto its own
+command class, and `CmdInventory` is that mixin over Evennia's `Command`.
 
 ```
 inventory
@@ -1280,9 +1343,13 @@ become one line and a count. A game with durability, charges or ownership sets i
 items, and each then gets its own line — two longswords are not the same longsword once one is chipped,
 and only the game knows that.
 
-**Stacking is by key, not by displayed name.** Stacking by what is shown would merge a seen and an
-unseen copy of the same thing, and give a blind player a single `Something (50)` where the real
-groupings tell them more. The name is rendered per group through `get_display_name()` afterwards.
+**The carried items are found and grouped with `bucket_contents`** from `evennia_targeting`, over the
+caller's `contents`, filtered by `op_not(f_worn_by(caller))` — one walk that filters and groups
+together. A stackable item's bucket is its key; an unstackable one gets a bucket of its own.
+
+**Stacking is by key, not by displayed name.** Stacking by what is shown would merge two different
+things a looker cannot make out into one count that counts nothing real. The name is rendered per group
+through `get_display_name()` afterwards.
 
 **The summary names a limit only when there is one.** Capacity defaults to `float("inf")`, so a game
 that never sets one would otherwise read `Carrying 12.5 of inf.`
@@ -1303,13 +1370,14 @@ that never sets one would otherwise read `Carrying 12.5 of inf.`
 | CI-09 | The summary gives the weight carried | test_ci_09_the_summary_gives_the_weight_carried |
 | CI-10 | The summary names the limit when one is set | test_ci_10_the_summary_names_the_limit_when_one_is_set |
 | CI-11 | The summary omits the limit when capacity is unlimited | test_ci_11_the_summary_omits_an_unlimited_limit |
+| CI-15 | `CmdInventory` is `CmdInventoryMixin` over Evennia's `Command` | test_ci_15_cmdinventory_is_the_mixin_over_evennias_command |
 
 `CI-02` is the whole reason this replaces Evennia's `CmdInventory`, which lists `contents` and so shows
 a player their armour as though it were in a sack.
 
-`CI-05` is the case that decides between two readings of "stack by name". Two items with one key, one
-of which this looker cannot make out, must stay two lines — the counts are then the real ones, and a
-blind player reads the groupings rather than a single total.
+`CI-05` is the case that decides between two readings of "stack by name": two items with different
+keys that this looker makes out as the same thing — both `something`. They stay two lines. Stacking by
+displayed name would merge them.
 
 `CI-13` is the case `stackable` exists for, and the one no rule inside a command could reach. Two
 longswords with the same name and different durability are two things to their owner and one thing to
