@@ -20,6 +20,7 @@ from evennia import Command
 from evennia_targeting import bucket_contents, op_not
 
 from evennia_equipment.contrib.utils import resolve_remove, resolve_wear
+from evennia_equipment.finders import find_carried
 from evennia_equipment.targeting import f_worn_by
 
 
@@ -60,31 +61,53 @@ class _EquipmentVerbMixin:
 
 
 class CmdWearMixin(_EquipmentVerbMixin):
-    """Put something on: find it, check it can go where asked, wear it."""
+    """Put something on: find it, check it can go where asked, wear it.
+
+    ``slot`` and ``verb`` are what a game sets to make ``wield`` or ``hold``
+    of it. See CW-17 and CW-18.
+    """
 
     verb = "wear"
 
+    #: An enum member fixing where the item goes. With it set, the argument is
+    #: the item alone — ``on`` is part of a name, not a split.
+    slot = None
+
     def func(self):
         caller = self.caller
+        verb = self.verb
         text = self.args.strip()
         if not text:
-            caller.msg("Wear what?")
+            caller.msg(f"{verb.capitalize()} what?")
             return
 
-        answer, refusal = resolve_wear(caller, text)
-        if refusal:
-            caller.msg(refusal)
-            return
-        item, slot = answer
+        if self.slot is None:
+            answer, refusal = resolve_wear(caller, text)
+            if refusal:
+                caller.msg(refusal)
+                return
+            item, slot = answer
+        else:
+            item, refusal = find_carried(caller, text)
+            if refusal:
+                caller.msg(refusal)
+                return
+            slot = self.slot
         name = item.get_display_name(caller)
 
         if caller.slots_for(item, slot) is None:
-            if not getattr(item, "wearslot", None):
-                caller.msg(f"{name} is not something you can wear.")
-            elif slot is not None:
-                caller.msg(f"{name} can't go on your {_slot_name(slot)}.")
+            groups = getattr(item, "wearslot", None)
+            if not groups:
+                caller.msg(f"{name} is not something you can {verb}.")
+            elif slot is not None and not any(slot.value in group for group in groups):
+                # No group holds the slot at all, which is not the same as the
+                # slot being taken. See CW-19 and CW-20.
+                if self.slot is None:
+                    caller.msg(f"{name} can't go on your {_slot_name(slot)}.")
+                else:
+                    caller.msg(f"You can't {verb} {name}.")
             else:
-                caller.msg(f"You have nowhere to wear {name}.")
+                caller.msg(f"You have nowhere to {verb} {name}.")
             return
 
         worn, reason = caller.wear(item, slot)
@@ -92,7 +115,7 @@ class CmdWearMixin(_EquipmentVerbMixin):
             caller.msg(reason)
             return
 
-        caller.msg(f"You wear {name}.")
+        caller.msg(f"You {verb} {name}.")
         self.announce(item)
         self.at_success(item)
 

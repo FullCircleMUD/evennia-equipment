@@ -389,7 +389,7 @@ search global and a builder would otherwise reach an object anywhere in the game
 The split is `evennia_targeting.parse_split`, on the last whole-word `on` or `from`. An item whose name
 holds the spaced word — *a ring on a chain* — needs the slot named to be worn by name.
 
-**Four seams, each with one job.**
+**Five seams, each with one job.**
 
 | Seam | On | Default |
 |---|---|---|
@@ -397,12 +397,13 @@ holds the spaced word — *a ring on a chain* — needs the slot named to be wor
 | `at_success(item)` | `wear`, `remove` | nothing; a game whose equipping costs a turn starts its time wait here |
 | `extra_lines()` | `inventory` | `[]`; a game's balances, placed between the items and the summary |
 | `slot_column_gap` | `equipment` | `2`; the spaces after the slot column |
+| `slot`, `verb` | `wear` | `None` and `wear`; a game's `wield` fixes the slot and words the lines |
 
 `announce` and `at_success` run only when the item went on or came off. The room line names the item
 found, not what was typed.
 
 **`wield`, `hold`, `get`, `drop` and `give` are not among them.** `wield` and `hold` are a game's words
-over its own slot names — `wear sword on wield` already does the job. Evennia's `get` and `drop` call
+over its own slot names: `CmdWearMixin` with `slot` and `verb` set. Evennia's `get` and `drop` call
 `move_to`, so `at_pre_object_receive` fires with no command of ours.
 
 ### Reading a slot sheet and an inventory

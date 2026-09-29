@@ -2756,6 +2756,69 @@ class WearCommandTests(EvenniaCommandTest):
         self.assertFalse(issubclass(CmdWearMixin, Command))
 
 
+    def _holding(self):
+        """A command with the slot and the verb fixed, as a game's `hold` is."""
+        from tests.slot_enums import WearSlot
+
+        class CmdHold(CmdWear):
+            key = "hold"
+            slot = WearSlot.RIGHT_HAND
+            verb = "hold"
+
+        return CmdHold()
+
+    def test_cw_17_a_fixed_slot_puts_the_item_there(self):
+        """CW-17"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        ring = self._held(wearer, Ring, "iron ring")
+        # Both hands free, LEFT_HAND declared first.
+        self.call(self._holding(), "iron ring", caller=wearer)
+        self.assertIs(wearer.worn_items["RIGHT_HAND"], ring)
+        self.assertIsNone(wearer.worn_items["LEFT_HAND"])
+
+        chained = self._held(wearer, Ring, "a ring on a chain")
+        wearer.remove(ring)
+        # With the slot fixed, "on" is part of the name, not a split.
+        self.call(self._holding(), "ring on a chain", caller=wearer)
+        self.assertIs(wearer.worn_items["RIGHT_HAND"], chained)
+
+    def test_cw_18_verb_words_the_callers_lines(self):
+        """CW-18"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        self.assertEqual(self.call(self._holding(), "", caller=wearer), "Hold what?")
+        self._held(wearer, Ring, "iron ring")
+        out = self.call(self._holding(), "iron ring", caller=wearer)
+        self.assertIn("You hold iron ring.", out)
+
+    def test_cw_19_no_group_for_the_fixed_slot_is_refused_as_cant(self):
+        """CW-19"""
+        from tests.game_typeclasses import Helmet
+
+        wearer = self._wearer()
+        helmet = self._held(wearer, Helmet, "iron helmet")
+        out = self.call(self._holding(), "iron helmet", caller=wearer)
+        self.assertIn("You can't hold iron helmet.", out)
+        self.assertFalse(wearer.is_worn(helmet))
+
+    def test_cw_20_an_occupied_fixed_slot_is_refused_as_nowhere(self):
+        """CW-20"""
+        from tests.game_typeclasses import Ring
+
+        wearer = self._wearer()
+        first = self._held(wearer, Ring, "gold ring")
+        self.call(self._holding(), "gold ring", caller=wearer)
+        second = self._held(wearer, Ring, "iron ring")
+        # The left hand is free, but the slot is fixed.
+        out = self.call(self._holding(), "iron ring", caller=wearer)
+        self.assertIn("nowhere to hold", out.lower())
+        self.assertFalse(wearer.is_worn(second))
+        self.assertIs(wearer.worn_items["RIGHT_HAND"], first)
+
+
 class RemoveCommandTests(EvenniaCommandTest):
     """CM — the command a player types to take something off."""
 

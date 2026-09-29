@@ -118,6 +118,7 @@ would not treat as interchangeable.
 | `at_success(item)` | `wear`, `remove` | do anything that follows success — a time wait in a fight. The default does nothing |
 | `extra_lines()` | `inventory` | add lines between the items and the summary — balances, resources |
 | `slot_column_gap` | `equipment` | widen the space after the slot column |
+| `slot`, `verb` | `wear` | make `wield` or `hold` of it: `slot` fixes where the item goes, `verb` words the lines |
 
 `announce` and `at_success` run only when the item went on or came off.
 
@@ -151,8 +152,15 @@ name** — the argument splits on it. *An onyx ring* and *a bone helm* are fine.
 **`get`, `drop` and `give` are Evennia's.** `CmdGet` calls `obj.move_to(caller)`, so the carrying
 refusal fires with no command of ours.
 
-**`wield` and `hold` are your game's.** `wear sword on wield` already does what `wield sword` would; the
-shorthand is a short subclass in your own code.
+**`wield` and `hold` are your game's**, because the slot names are. Each is `CmdWearMixin` with `slot`
+and `verb` set:
+
+```python
+class CmdWield(CmdWearMixin, Command):
+    key = "wield"
+    slot = WearSlot.WIELD
+    verb = "wield"
+```
 
 ## Learn more
 

@@ -1176,10 +1176,15 @@ wear <item> on <slot>
 
 1. No argument — `Wear what?`.
 2. `resolve_wear()`. A refusal is told to the caller.
-3. `slots_for(item, slot)` is `None` — refused: not wearable at all, can't go on the named slot, or
-   nowhere free.
+3. `slots_for(item, slot)` is `None` — refused: not wearable at all; no group containing the slot —
+   "can't go on your <slot>", or "You can't <verb> X" when the slot is fixed; or nowhere free.
 4. `wear(item, slot)`. `at_pre_wear`'s refusal is told to the caller unchanged.
 5. The caller is told they wear it, `announce(item)` tells the room, and `at_success(item)` runs.
+
+**Two attributes let a command fix what it means.** `slot` is `None`, and set to an enum member it
+fixes where the item goes: the argument is then the item alone, found with `find_carried()` rather than
+split on `on`. `verb` is `wear`, and words every line the caller reads and the room line. A game's
+`wield` is `wear` with `slot` and `verb` set.
 
 **Two seams, each doing one job.** `announce(item)` tells the room, with `msg_contents` by default; a
 game with its own messaging overrides it. `at_success(item)` does nothing by default; a game whose
@@ -1201,6 +1206,10 @@ wearing costs a turn in a fight starts its time wait there. Both run only when t
 | CW-14 | `announce()` is the room line: overriding it replaces the default | test_cw_14_announce_is_the_room_line |
 | CW-15 | `at_success()` runs once when the item goes on, and not on a refusal | test_cw_15_at_success_runs_once_on_success_and_not_on_a_refusal |
 | CW-16 | `CmdWear` is `CmdWearMixin` over Evennia's `Command` | test_cw_16_cmdwear_is_the_mixin_over_evennias_command |
+| CW-17 | A fixed `slot` puts the item there, over an earlier free group, without splitting on `on` | test_cw_17_a_fixed_slot_puts_the_item_there |
+| CW-18 | `verb` words the caller's lines — `<Verb> what?` and `You <verb> X.` | test_cw_18_verb_words_the_callers_lines |
+| CW-19 | An item with no group containing the fixed slot is refused as `You can't <verb> X.` | test_cw_19_no_group_for_the_fixed_slot_is_refused_as_cant |
+| CW-20 | An item whose group for the fixed slot is occupied is refused as nowhere to `<verb>` it | test_cw_20_an_occupied_fixed_slot_is_refused_as_nowhere |
 
 `CW-07` asserts both halves. `self.call(..., receiver=)` returns only the receiver's output, so the
 wearer being told twice is invisible to it — the caller's own output is captured separately and the
@@ -1209,6 +1218,13 @@ phrase counted.
 `CW-13` is `wear helm`, typed for an iron helmet. The room reads the helmet.
 
 `CW-15` is where a game's time wait goes. Running on a refusal would charge a turn for nothing.
+
+`CW-17` is `hold ring` with both hands free: the ring goes in the held hand, not the first one its
+declaration names. An item named *a ring on a chain* is found whole — with the slot fixed, `on` is part
+of the name.
+
+`CW-19` and `CW-20` are the two reasons a fixed slot says no, kept apart because the fix differs:
+`wield helmet` can never work, `wield dagger` with the hand full works once it is empty.
 
 Retired: `CW-08` and `CW-09`. How the argument splits is `parse_split`'s.
 
