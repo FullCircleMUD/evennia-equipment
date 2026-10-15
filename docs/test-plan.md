@@ -30,6 +30,7 @@ Behaviour is agreed here first, before any test or code — see
 | `CN` | `EquipmentContainerMixin` — an object that is both carried and carrying |
 | `CF` | The slot enum a consumer declares, and the boot check that refuses a bad one |
 | `WR` | `EquipmentWearableMixin` — an item's slot declaration, and what may be stored in it |
+| `DS` | `describe_wear_slot()` — an item's slot declaration as a line a player reads |
 | `WS` | `EquipmentWearslotsMixin` — a wearer's slots, from the body plan its subclass declares |
 | `WE` | `wear()` — choosing a group of slots and filling it |
 | `RM` | `remove()` — freeing the slots an item occupies |
@@ -503,6 +504,27 @@ Whether *this* creature has the slots is `wear()`'s job.
 | WR-06 | A group with no slots is refused | test_wr_06_a_group_with_no_slots_is_refused |
 | WR-07 | A slot name the enum does not hold is refused | test_wr_07_a_slot_the_enum_does_not_hold_is_refused |
 | WR-08 | A slot name in the enum is accepted, whether or not any creature has it | test_wr_08_a_slot_in_the_enum_is_accepted |
+
+### DS — the slot declaration as a line a player reads
+
+`describe_wear_slot()` on `EquipmentWearableMixin` takes no arguments and answers a list of lines — the
+shape a game's description of an item asks of each part. The item's own declaration, worded: slots
+in a group joined with `and`, groups joined with `or`, each name with its underscores as spaces and
+title-cased, as the `equipment` sheet words a slot. Only the names the item declares are read, so a
+consumer's slot enum is never listed.
+
+```
+[["HEAD"]]                          → ["Worn: Head"]
+[["WIELD", "HOLD"]]                 → ["Worn: Wield and Hold"]
+[["LEFT_FINGER"], ["RIGHT_FINGER"]] → ["Worn: Left Finger or Right Finger"]
+```
+
+| ID | Case | Test function |
+|---|---|---|
+| DS-01 | One group of one slot is `["Worn: <slot>"]`, the name's underscores as spaces and title-cased | test_ds_01_one_slot_is_worded |
+| DS-02 | Slots in one group are joined with `and` | test_ds_02_slots_in_a_group_join_with_and |
+| DS-03 | Groups are joined with `or`, a group of several slots among them included — `[["WIELD", "HOLD"], ["BODY"]]` is `Worn: Wield and Hold or Body` | test_ds_03_groups_join_with_or |
+| DS-04 | An item with no declaration raises the property's `AttributeError`, as any read of `wearslot` does | test_ds_04_no_declaration_raises |
 | WR-09 | A class-level default is validated the first time it is read | test_wr_09_a_class_default_is_validated_on_first_read |
 | WR-10 | A slot repeated inside one group is refused | test_wr_10_a_slot_repeated_in_one_group_is_refused |
 | WR-11 | A declaration set through `.db` bypasses validation | test_wr_11_a_declaration_set_through_db_bypasses_validation |

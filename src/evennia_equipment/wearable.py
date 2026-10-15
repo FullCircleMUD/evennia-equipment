@@ -126,6 +126,27 @@ class EquipmentWearableMixin(EquipmentCarriableMixin):
 
     wearslot = WearslotProperty(None)
 
+    def describe_wear_slot(self):
+        """The slot declaration as a line a player reads.
+
+        ::
+
+            [["WIELD", "HOLD"]]                     # ["Worn: Wield and Hold"]
+            [["LEFT_FINGER"], ["RIGHT_FINGER"]]     # ["Worn: Left Finger or Right Finger"]
+
+        Slots in a group are joined with ``and``, groups with ``or``, and each
+        name has its underscores as spaces and is title-cased, as the
+        ``equipment`` sheet words a slot. Only the names the item declares are
+        read. A list of lines, so a game's description of an item can take it
+        alongside its other parts. An item with no declaration raises the
+        property's ``AttributeError``, as any read of it does. See DS.
+        """
+        groups = (
+            " and ".join(slot.replace("_", " ").title() for slot in group)
+            for group in self.wearslot
+        )
+        return [f"Worn: {' or '.join(groups)}"]
+
     @property
     def wearslot_identity(self):
         """What this item is known by across a world rebuild, or ``None``.

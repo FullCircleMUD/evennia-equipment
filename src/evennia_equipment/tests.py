@@ -230,6 +230,49 @@ class WearableTests(DjangoTestCase):
         self.assertEqual(item.wearslot, "HEAD")
 
 
+class DescribeWearSlotTests(DjangoTestCase):
+    """DS — the slot declaration as a line a player reads."""
+
+    def _item(self, wearslot=None):
+        """Create one wearable item declaring ``wearslot``. Not a test."""
+        from evennia import create_object
+        from tests.game_typeclasses import WearableThing
+
+        item = create_object(WearableThing, key="item", nohome=True)
+        if wearslot is not None:
+            item.wearslot = wearslot
+        return item
+
+    def test_ds_01_one_slot_is_worded(self):
+        """DS-01"""
+        self.assertEqual(self._item([["HEAD"]]).describe_wear_slot(), ["Worn: Head"])
+        self.assertEqual(self._item([["DOG_NECK"]]).describe_wear_slot(), ["Worn: Dog Neck"])
+
+    def test_ds_02_slots_in_a_group_join_with_and(self):
+        """DS-02"""
+        self.assertEqual(
+            self._item([["LEFT_HAND", "RIGHT_HAND"]]).describe_wear_slot(),
+            ["Worn: Left Hand and Right Hand"],
+        )
+
+    def test_ds_03_groups_join_with_or(self):
+        """DS-03"""
+        self.assertEqual(
+            self._item([["LEFT_HAND"], ["RIGHT_HAND"]]).describe_wear_slot(),
+            ["Worn: Left Hand or Right Hand"],
+        )
+        self.assertEqual(
+            self._item([["LEFT_HAND", "RIGHT_HAND"], ["BODY"]]).describe_wear_slot(),
+            ["Worn: Left Hand and Right Hand or Body"],
+        )
+
+    def test_ds_04_no_declaration_raises(self):
+        """DS-04"""
+        with self.assertRaises(AttributeError) as caught:
+            self._item().describe_wear_slot()
+        self.assertIn("wearslot is None", str(caught.exception))
+
+
 class WearslotsTests(DjangoTestCase):
     """WS — a wearer's slots, from the body plan its subclass declares."""
 
