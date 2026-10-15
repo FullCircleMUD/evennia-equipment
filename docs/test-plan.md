@@ -17,6 +17,7 @@ Behaviour is agreed here first, before any test or code — see
 |---|---|
 | `SC` | The scaffold — the library is installed and the runner reaches it |
 | `CR` | `EquipmentCarriableMixin` — an item's weight, and what may be stored in it |
+| `WD` | `describe_weight()` — an item's weight as a line a player reads |
 | `ST` | `stackable` — whether an item is interchangeable with another of its name |
 | `CA` | `EquipmentCarryingMixin` — rebuilding a carrier's total weight from its contents |
 | `PR` | `at_pre_object_receive` — refusing an object that cannot be carried |
@@ -156,6 +157,23 @@ Booleans are refused explicitly, because `bool` subclasses `int` in Python: `isi
 descriptor, so a consumer writing `item.db.weight` stores whatever they like. The case exists so the
 limit is stated rather than discovered, and so it is not later "fixed" by chasing the
 `AttributeHandler` — which cannot be done from the library side.
+
+### WD — the weight as a line a player reads
+
+`describe_weight(unit=None)` on `EquipmentCarriableMixin` answers a list of lines — the shape a game's
+description of an item asks of each part. The weight is a number with no unit of the library's, so a
+game that has one passes it, and it follows the number after a space. The number is written in its
+shortest form: `2.0` reads `2`.
+
+```
+describe_weight()       → ["Weight: 3.5"]
+describe_weight("kg")   → ["Weight: 3.5 kg"]
+```
+
+| ID | Case | Test function |
+|---|---|---|
+| WD-01 | With no unit, the line is `"Weight: <weight>"`, the number in its shortest form — `3.5` reads `3.5`, `2.0` reads `2` | test_wd_01_the_weight_with_no_unit |
+| WD-02 | A unit given follows the number after a space — `3.5` with `"kg"` is `"Weight: 3.5 kg"` | test_wd_02_a_unit_follows_the_number |
 
 ### ST — whether an item stacks
 

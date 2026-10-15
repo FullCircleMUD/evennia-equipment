@@ -1897,6 +1897,28 @@ class CarriableTests(DjangoTestCase):
         self.assertEqual(thing.weight, -5.0)
 
 
+class DescribeWeightTests(DjangoTestCase):
+    """WD — the weight as a line a player reads."""
+
+    def _thing(self, weight):
+        """Create one carriable object weighing ``weight``. Not a test."""
+        from evennia import create_object
+        from tests.game_typeclasses import CarriableThing
+
+        thing = create_object(CarriableThing, key="thing", nohome=True)
+        thing.weight = weight
+        return thing
+
+    def test_wd_01_the_weight_with_no_unit(self):
+        """WD-01"""
+        self.assertEqual(self._thing(3.5).describe_weight(), ["Weight: 3.5"])
+        self.assertEqual(self._thing(2.0).describe_weight(), ["Weight: 2"])
+
+    def test_wd_02_a_unit_follows_the_number(self):
+        """WD-02"""
+        self.assertEqual(self._thing(3.5).describe_weight("kg"), ["Weight: 3.5 kg"])
+
+
 class StackableTests(DjangoTestCase):
     """ST — whether an item is interchangeable with another of its name."""
 

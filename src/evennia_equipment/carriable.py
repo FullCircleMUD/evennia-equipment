@@ -108,6 +108,21 @@ class EquipmentCarriableMixin:
         """
         return self.weight
 
+    def describe_weight(self, unit=None):
+        """The weight as a line a player reads.
+
+        ::
+
+            sword.describe_weight()         # ["Weight: 3.5"]
+            sword.describe_weight("kg")     # ["Weight: 3.5 kg"]
+
+        The weight is a number with no unit of the library's; a game passes
+        its own, and it follows the number after a space. The number is
+        written in its shortest form, so ``2.0`` reads ``2``. See WD.
+        """
+        line = f"Weight: {self.weight:g}"
+        return [f"{line} {unit}" if unit else line]
+
     def at_weight_changed(self):
         """Tell whoever is holding this object to rebuild their total.
 
