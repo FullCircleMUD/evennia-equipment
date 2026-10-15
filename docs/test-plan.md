@@ -398,6 +398,20 @@ also serves "half the weight", which a boolean cannot express.
 | CN-09 | A container's own weight changing updates the carrier's total | test_cn_09_a_containers_own_weight_change_updates_the_carrier |
 | CN-10 | A container refuses an object that cannot be carried | test_cn_10_a_container_refuses_what_cannot_be_carried |
 | CN-12 | A container's extra weight counts toward what it contributes | test_cn_12_a_containers_extra_weight_counts_toward_what_it_contributes |
+| CN-13 | A subclass may contribute only its own weight, excluding its contents | test_cn_13_a_subclass_may_contribute_only_its_own_weight |
+| CN-14 | Loading a container into memory does not raise | test_cn_14_loading_a_container_into_memory_does_not_raise |
+
+`CN-08` matters most: if the chain does not terminate the failure is a loop, not a wrong number. A
+character is not carriable, and a room does not carry, so the walk upward runs out on its own.
+
+`CN-10` is the composition check — inherited carrying behaviour still reachable through the MRO.
+
+`CN-14` aims at a real risk. The container rebuilds on load and now notifies its holder, which reads
+back into the container while Evennia is still constructing objects. `at_init` carries a `self.pk`
+guard for that, and propagation reaches the rebuild by a route that does not pass through it.
+
+`CN-11` was retired before it was written — a container's own capacity is inherited behaviour already
+covered by `CN-10`.
 
 ### HD — what a container holds, as a line a player reads
 
@@ -416,20 +430,6 @@ describe_container("kg")    → ["Holds: 12 of 30 kg"]
 |---|---|---|
 | HD-01 | The line is `"Holds: <carried> of <capacity>"`, both in their shortest form, a unit given following the capacity — `12` of `30` with `"kg"` is `"Holds: 12 of 30 kg"` | test_hd_01_carried_of_capacity |
 | HD-02 | A container with no limit reads `"Holds: <carried>, no limit"`, a unit given following the carried weight — `"Holds: 12 kg, no limit"` | test_hd_02_no_limit |
-| CN-13 | A subclass may contribute only its own weight, excluding its contents | test_cn_13_a_subclass_may_contribute_only_its_own_weight |
-| CN-14 | Loading a container into memory does not raise | test_cn_14_loading_a_container_into_memory_does_not_raise |
-
-`CN-08` matters most: if the chain does not terminate the failure is a loop, not a wrong number. A
-character is not carriable, and a room does not carry, so the walk upward runs out on its own.
-
-`CN-10` is the composition check — inherited carrying behaviour still reachable through the MRO.
-
-`CN-14` aims at a real risk. The container rebuilds on load and now notifies its holder, which reads
-back into the container while Evennia is still constructing objects. `at_init` carries a `self.pk`
-guard for that, and propagation reaches the rebuild by a route that does not pass through it.
-
-`CN-11` was retired before it was written — a container's own capacity is inherited behaviour already
-covered by `CN-10`.
 
 ### CF — the declared layouts
 
@@ -541,6 +541,22 @@ Whether *this* creature has the slots is `wear()`'s job.
 | WR-06 | A group with no slots is refused | test_wr_06_a_group_with_no_slots_is_refused |
 | WR-07 | A slot name the enum does not hold is refused | test_wr_07_a_slot_the_enum_does_not_hold_is_refused |
 | WR-08 | A slot name in the enum is accepted, whether or not any creature has it | test_wr_08_a_slot_in_the_enum_is_accepted |
+| WR-09 | A class-level default is validated the first time it is read | test_wr_09_a_class_default_is_validated_on_first_read |
+| WR-10 | A slot repeated inside one group is refused | test_wr_10_a_slot_repeated_in_one_group_is_refused |
+| WR-11 | A declaration set through `.db` bypasses validation | test_wr_11_a_declaration_set_through_db_bypasses_validation |
+
+`WR-08` is the scope of the name check: an item declaring `DOG_NECK` is valid even in a game whose
+players are humanoid, because the item genuinely does not know its wearer. It is what would fail if
+someone later "improved" the check to consult a particular wearer's slots.
+
+`WR-09` matters because a typo in a typeclass would otherwise wait for someone to assign to it.
+`AttributeProperty.__get__` autocreates by calling `__set__`, so the first read of any instance runs
+the check.
+
+`WR-10` refuses `[["HEAD", "HEAD"]]` — a group cannot take the same slot twice, and the repetition
+would otherwise be folded silently, leaving a group that occupies less than it reads.
+
+`WR-11` is the same documented limit as `CR-11`.
 
 ### DS — the slot declaration as a line a player reads
 
@@ -562,22 +578,6 @@ consumer's slot enum is never listed.
 | DS-02 | Slots in one group are joined with `and` | test_ds_02_slots_in_a_group_join_with_and |
 | DS-03 | Groups are joined with `or`, a group of several slots among them included — `[["WIELD", "HOLD"], ["BODY"]]` is `Worn: Wield and Hold or Body` | test_ds_03_groups_join_with_or |
 | DS-04 | An item with no declaration raises the property's `AttributeError`, as any read of `wearslot` does | test_ds_04_no_declaration_raises |
-| WR-09 | A class-level default is validated the first time it is read | test_wr_09_a_class_default_is_validated_on_first_read |
-| WR-10 | A slot repeated inside one group is refused | test_wr_10_a_slot_repeated_in_one_group_is_refused |
-| WR-11 | A declaration set through `.db` bypasses validation | test_wr_11_a_declaration_set_through_db_bypasses_validation |
-
-`WR-08` is the scope of the name check: an item declaring `DOG_NECK` is valid even in a game whose
-players are humanoid, because the item genuinely does not know its wearer. It is what would fail if
-someone later "improved" the check to consult a particular wearer's slots.
-
-`WR-09` matters because a typo in a typeclass would otherwise wait for someone to assign to it.
-`AttributeProperty.__get__` autocreates by calling `__set__`, so the first read of any instance runs
-the check.
-
-`WR-10` refuses `[["HEAD", "HEAD"]]` — a group cannot take the same slot twice, and the repetition
-would otherwise be folded silently, leaving a group that occupies less than it reads.
-
-`WR-11` is the same documented limit as `CR-11`.
 
 ### WS — a wearer's slots
 
