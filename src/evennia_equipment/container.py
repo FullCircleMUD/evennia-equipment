@@ -32,6 +32,24 @@ class EquipmentContainerMixin(EquipmentCarriableMixin, EquipmentCarryingMixin):
         """
         return self.weight + self.current_weight_carried
 
+    def describe_container(self, unit=None):
+        """What it holds against what it takes, as a line a player reads.
+
+        ::
+
+            sack.describe_container("kg")   # ["Holds: 12 of 30 kg"]
+
+        Each number in its shortest form, as ``describe_weight`` writes one,
+        and a unit given follows the last of them. A container with no limit
+        says so in place of a capacity. See HD.
+        """
+        suffix = f" {unit}" if unit else ""
+        carried = f"{self.current_weight_carried:g}"
+        capacity = self.effective_capacity
+        if capacity == float("inf"):
+            return [f"Holds: {carried}{suffix}, no limit"]
+        return [f"Holds: {carried} of {capacity:g}{suffix}"]
+
     def _recalculate_item_weight(self, exclude=None):
         """Rebuild, then tell whoever holds this that its total changed.
 

@@ -29,6 +29,7 @@ Behaviour is agreed here first, before any test or code — see
 | `EW` | `effective_weight` — what an object contributes to whoever holds it |
 | `WC` | `at_weight_changed` — a weight changing while the object is held |
 | `CN` | `EquipmentContainerMixin` — an object that is both carried and carrying |
+| `HD` | `describe_container()` — what a container holds against what it takes, as a line a player reads |
 | `CF` | The slot enum a consumer declares, and the boot check that refuses a bad one |
 | `WR` | `EquipmentWearableMixin` — an item's slot declaration, and what may be stored in it |
 | `DS` | `describe_wear_slot()` — an item's slot declaration as a line a player reads |
@@ -397,6 +398,24 @@ also serves "half the weight", which a boolean cannot express.
 | CN-09 | A container's own weight changing updates the carrier's total | test_cn_09_a_containers_own_weight_change_updates_the_carrier |
 | CN-10 | A container refuses an object that cannot be carried | test_cn_10_a_container_refuses_what_cannot_be_carried |
 | CN-12 | A container's extra weight counts toward what it contributes | test_cn_12_a_containers_extra_weight_counts_toward_what_it_contributes |
+
+### HD — what a container holds, as a line a player reads
+
+`describe_container(unit=None)` on `EquipmentContainerMixin` answers a list of lines, as
+`describe_weight` does: `current_weight_carried` against `effective_capacity`, each number in its
+shortest form, a unit given following the capacity after a space. A container with no limit — the
+default capacity, infinite — says so instead of a capacity.
+
+```
+describe_container()        → ["Holds: 12 of 30"]
+describe_container("kg")    → ["Holds: 12 of 30 kg"]
+                              ["Holds: 12 kg, no limit"]
+```
+
+| ID | Case | Test function |
+|---|---|---|
+| HD-01 | The line is `"Holds: <carried> of <capacity>"`, both in their shortest form, a unit given following the capacity — `12` of `30` with `"kg"` is `"Holds: 12 of 30 kg"` | test_hd_01_carried_of_capacity |
+| HD-02 | A container with no limit reads `"Holds: <carried>, no limit"`, a unit given following the carried weight — `"Holds: 12 kg, no limit"` | test_hd_02_no_limit |
 | CN-13 | A subclass may contribute only its own weight, excluding its contents | test_cn_13_a_subclass_may_contribute_only_its_own_weight |
 | CN-14 | Loading a container into memory does not raise | test_cn_14_loading_a_container_into_memory_does_not_raise |
 

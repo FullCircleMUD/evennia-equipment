@@ -2361,6 +2361,36 @@ class WeightChangeTests(DjangoTestCase):
         self.assertEqual(carrier.items_weight, 6.0)
 
 
+class DescribeContainerTests(DjangoTestCase):
+    """HD — what a container holds, as a line a player reads."""
+
+    def _container(self, capacity=None, contents=()):
+        """A container holding things of ``contents`` weights. Not a test."""
+        from evennia import create_object
+        from tests.game_typeclasses import CarriableThing, Container
+
+        container = create_object(Container, key="sack", nohome=True)
+        if capacity is not None:
+            container.max_carrying_capacity = capacity
+        for weight in contents:
+            thing = create_object(CarriableThing, key="thing", nohome=True)
+            thing.weight = weight
+            thing.move_to(container, quiet=True)
+        return container
+
+    def test_hd_01_carried_of_capacity(self):
+        """HD-01"""
+        sack = self._container(capacity=30, contents=(10, 2))
+        self.assertEqual(sack.describe_container(), ["Holds: 12 of 30"])
+        self.assertEqual(sack.describe_container("kg"), ["Holds: 12 of 30 kg"])
+
+    def test_hd_02_no_limit(self):
+        """HD-02"""
+        sack = self._container(contents=(12,))
+        self.assertEqual(sack.describe_container(), ["Holds: 12, no limit"])
+        self.assertEqual(sack.describe_container("kg"), ["Holds: 12 kg, no limit"])
+
+
 class ContainerTests(DjangoTestCase):
     """CN — an object that is carried and carrying at once."""
 
