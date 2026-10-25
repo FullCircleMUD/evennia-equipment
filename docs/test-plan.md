@@ -1245,9 +1245,11 @@ fixes where the item goes: the argument is then the item alone, found with `find
 split on `on`. `verb` is `wear`, and words every line the caller reads and the room line. A game's
 `wield` is `wear` with `slot` and `verb` set.
 
-**Two seams, each doing one job.** `announce(item)` tells the room, with `msg_contents` by default; a
+**Three seams, each doing one job.** `announce(item)` tells the room, with `msg_contents` by default; a
 game with its own messaging overrides it. `at_success(item)` does nothing by default; a game whose
 wearing costs a turn in a fight starts its time wait there. Both run only when the item went on.
+`at_refused(message)` tells the caller every refusal, with `caller.msg` by default; a game that tells a
+refusal its own way overrides it.
 
 | ID | Case | Test function |
 |---|---|---|
@@ -1269,6 +1271,7 @@ wearing costs a turn in a fight starts its time wait there. Both run only when t
 | CW-18 | `verb` words the caller's lines — `<Verb> what?` and `You <verb> X.` | test_cw_18_verb_words_the_callers_lines |
 | CW-19 | An item with no group containing the fixed slot is refused as `You can't <verb> X.` | test_cw_19_no_group_for_the_fixed_slot_is_refused_as_cant |
 | CW-20 | An item whose group for the fixed slot is occupied is refused as nowhere to `<verb>` it | test_cw_20_an_occupied_fixed_slot_is_refused_as_nowhere |
+| CW-21 | `at_refused()` is how the caller is told a refusal: every one reaches it, once, with the line, and overriding it replaces the default | test_cw_21_at_refused_is_how_a_refusal_is_told |
 
 `CW-07` asserts both halves. `self.call(..., receiver=)` returns only the receiver's output, so the
 wearer being told twice is invisible to it — the caller's own output is captured separately and the
@@ -1284,6 +1287,10 @@ of the name.
 
 `CW-19` and `CW-20` are the two reasons a fixed slot says no, kept apart because the fix differs:
 `wield helmet` can never work, `wield dagger` with the hand full works once it is empty.
+
+`CW-21` runs every refusal the command makes — no argument, the finder's, not wearable, the wrong slot,
+nowhere free, and `at_pre_wear`'s — through an override that records the line, and the caller hears
+nothing.
 
 Retired: `CW-08` and `CW-09`. How the argument splits is `parse_split`'s.
 
@@ -1317,11 +1324,14 @@ remove from <slot>
 | CM-12 | `announce()` is the room line: overriding it replaces the default | test_cm_12_announce_is_the_room_line |
 | CM-13 | `at_success()` runs once when the item comes off, and not on a refusal | test_cm_13_at_success_runs_once_on_success_and_not_on_a_refusal |
 | CM-14 | `CmdRemove` is `CmdRemoveMixin` over Evennia's `Command` | test_cm_14_cmdremove_is_the_mixin_over_evennias_command |
+| CM-15 | `at_refused()` is how the caller is told a refusal, as for wearing | test_cm_15_at_refused_is_how_a_refusal_is_told |
 
 `CM-05` is the form the slot argument was added for. Two rings with the same key, one on each hand —
 `remove from right hand` is how a player says which.
 
 `CM-11` is `remove from left hand`. The room reads the ring, not a hand.
+
+`CM-15` runs no argument, the resolver's refusal and `at_pre_remove`'s, as `CW-21` does.
 
 Retired: `CM-09` and `CM-10`. How the argument splits is `parse_split`'s.
 

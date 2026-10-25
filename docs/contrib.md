@@ -116,11 +116,13 @@ would not treat as interchangeable.
 |---|---|---|
 | `announce(item)` | `wear`, `remove` | tell the room through your game's messaging. The default is `msg_contents` |
 | `at_success(item)` | `wear`, `remove` | do anything that follows success — a time wait in a fight. The default does nothing |
+| `at_refused(message)` | `wear`, `remove` | tell the caller a refusal your game's way. The default is `caller.msg` |
 | `extra_lines()` | `inventory` | add lines between the items and the summary — balances, resources |
 | `slot_column_gap` | `equipment` | widen the space after the slot column |
 | `slot`, `verb` | `wear` | make `wield` or `hold` of it: `slot` fixes where the item goes, `verb` words the lines |
 
-`announce` and `at_success` run only when the item went on or came off.
+`announce` and `at_success` run only when the item went on or came off; `at_refused` runs once for every
+refusal, with the line the caller would read.
 
 ```python
 class CmdInventory(CmdInventoryMixin, Command):

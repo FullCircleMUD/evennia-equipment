@@ -30,7 +30,8 @@ def _slot_name(slot):
 
 
 class _EquipmentVerbMixin:
-    """The two seams ``wear`` and ``remove`` share. Both run only on success."""
+    """The three seams ``wear`` and ``remove`` share. ``announce`` and
+    ``at_success`` run only on success, ``at_refused`` only on a refusal."""
 
     #: The verb the room line conjugates.
     verb = ""
@@ -59,6 +60,15 @@ class _EquipmentVerbMixin:
             item (Object): What went on or came off.
         """
 
+    def at_refused(self, message):
+        """Tell the caller why it did not happen. Override for a game's own
+        messaging. See CW-21 and CM-15.
+
+        Args:
+            message (str): The line the caller reads.
+        """
+        self.caller.msg(message)
+
 
 class CmdWearMixin(_EquipmentVerbMixin):
     """Put something on: find it, check it can go where asked, wear it.
@@ -78,19 +88,19 @@ class CmdWearMixin(_EquipmentVerbMixin):
         verb = self.verb
         text = self.args.strip()
         if not text:
-            caller.msg(f"{verb.capitalize()} what?")
+            self.at_refused(f"{verb.capitalize()} what?")
             return
 
         if self.slot is None:
             answer, refusal = resolve_wear(caller, text)
             if refusal:
-                caller.msg(refusal)
+                self.at_refused(refusal)
                 return
             item, slot = answer
         else:
             item, refusal = find_carried(caller, text)
             if refusal:
-                caller.msg(refusal)
+                self.at_refused(refusal)
                 return
             slot = self.slot
         name = item.get_display_name(caller)
@@ -98,21 +108,21 @@ class CmdWearMixin(_EquipmentVerbMixin):
         if caller.slots_for(item, slot) is None:
             groups = getattr(item, "wearslot", None)
             if not groups:
-                caller.msg(f"{name} is not something you can {verb}.")
+                self.at_refused(f"{name} is not something you can {verb}.")
             elif slot is not None and not any(slot.value in group for group in groups):
                 # No group holds the slot at all, which is not the same as the
                 # slot being taken. See CW-19 and CW-20.
                 if self.slot is None:
-                    caller.msg(f"{name} can't go on your {_slot_name(slot)}.")
+                    self.at_refused(f"{name} can't go on your {_slot_name(slot)}.")
                 else:
-                    caller.msg(f"You can't {verb} {name}.")
+                    self.at_refused(f"You can't {verb} {name}.")
             else:
-                caller.msg(f"You have nowhere to {verb} {name}.")
+                self.at_refused(f"You have nowhere to {verb} {name}.")
             return
 
         worn, reason = caller.wear(item, slot)
         if not worn:
-            caller.msg(reason)
+            self.at_refused(reason)
             return
 
         caller.msg(f"You {verb} {name}.")
@@ -129,17 +139,17 @@ class CmdRemoveMixin(_EquipmentVerbMixin):
         caller = self.caller
         text = self.args.strip()
         if not text:
-            caller.msg("Remove what?")
+            self.at_refused("Remove what?")
             return
 
         item, refusal = resolve_remove(caller, text)
         if refusal:
-            caller.msg(refusal)
+            self.at_refused(refusal)
             return
 
         removed, reason = caller.remove(item)
         if not removed:
-            caller.msg(reason)
+            self.at_refused(reason)
             return
 
         caller.msg(f"You remove {item.get_display_name(caller)}.")

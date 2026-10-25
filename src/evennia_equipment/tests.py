@@ -2913,6 +2913,40 @@ class WearCommandTests(EvenniaCommandTest):
         self.assertFalse(wearer.is_worn(second))
         self.assertIs(wearer.worn_items["RIGHT_HAND"], first)
 
+    def test_cw_21_at_refused_is_how_a_refusal_is_told(self):
+        """CW-21"""
+        from evennia import create_object
+        from tests.game_typeclasses import Helmet, UnwearableHumanoid, WearableThing
+
+        refused = []
+
+        class Refusing(CmdWear):
+            def at_refused(self, message):
+                refused.append(message)
+
+        wearer = self._wearer()
+        wearer.wear(self._held(wearer, Helmet, "iron helmet"))
+        self._held(wearer, Helmet, "steel helmet")
+        self._held(wearer, WearableThing, "rock")
+        balker = create_object(UnwearableHumanoid, key="balker", location=self.room1)
+        self._held(balker, Helmet, "bronze helmet")
+
+        for caller, args, line in (
+            (wearer, "", "wear what?"),
+            (wearer, "boots", find_carried(wearer, "boots")[1].lower()),
+            (wearer, "rock", "not something you can wear"),
+            (wearer, "steel helmet on left hand", "left hand"),
+            (wearer, "steel helmet", "nowhere"),
+            (balker, "bronze helmet", "will not go on"),
+        ):
+            with self.subTest(args=args):
+                refused.clear()
+                out = self.call(Refusing(), args, caller=caller)
+                self.assertEqual(len(refused), 1)
+                self.assertIn(line, refused[0].lower())
+                # The default is replaced, not added to.
+                self.assertEqual(out, "")
+
 
 class RemoveCommandTests(EvenniaCommandTest):
     """CM — the command a player types to take something off."""
@@ -3074,6 +3108,33 @@ class RemoveCommandTests(EvenniaCommandTest):
         self.assertTrue(issubclass(CmdRemove, CmdRemoveMixin))
         self.assertTrue(issubclass(CmdRemove, Command))
         self.assertFalse(issubclass(CmdRemoveMixin, Command))
+
+    def test_cm_15_at_refused_is_how_a_refusal_is_told(self):
+        """CM-15"""
+        from evennia import create_object
+        from tests.game_typeclasses import CursedHumanoid, Helmet
+
+        refused = []
+
+        class Refusing(CmdRemove):
+            def at_refused(self, message):
+                refused.append(message)
+
+        wearer = self._wearer()
+        cursed = create_object(CursedHumanoid, key="cursed", location=self.room1)
+        self._worn(cursed, Helmet, "iron helmet")
+
+        for caller, args, line in (
+            (wearer, "", "remove what?"),
+            (wearer, "boots", resolve_remove(wearer, "boots")[1].lower()),
+            (cursed, "iron helmet", "will not come off"),
+        ):
+            with self.subTest(args=args):
+                refused.clear()
+                out = self.call(Refusing(), args, caller=caller)
+                self.assertEqual(len(refused), 1)
+                self.assertIn(line, refused[0].lower())
+                self.assertEqual(out, "")
 
 
 class EquipmentCommandTests(EvenniaCommandTest):
