@@ -3237,6 +3237,38 @@ class EquipmentCommandTests(EvenniaCommandTest):
         self.assertTrue(issubclass(CmdEquipment, Command))
         self.assertFalse(issubclass(CmdEquipmentMixin, Command))
 
+    def test_ce_10_a_worn_items_line_shows_item_text(self):
+        """CE-10"""
+        from tests.game_typeclasses import Helmet
+
+        class CmdWithCondition(CmdEquipment):
+            def item_text(self, item):
+                return f"{super().item_text(item)}  (Worn)"
+
+        wearer = self._wearer()
+        self._worn(wearer, Helmet, "an iron helmet")
+        out = self.call(CmdWithCondition(), "", caller=wearer)
+        line = next(ln for ln in out.splitlines() if "Head" in ln)
+        self.assertIn("an iron helmet  (Worn)", line)
+
+    def test_ce_11_item_text_is_asked_only_about_filled_slots(self):
+        """CE-11"""
+        from tests.game_typeclasses import Helmet
+
+        asked = []
+
+        class CmdRecording(CmdEquipment):
+            def item_text(self, item):
+                asked.append(item)
+                return super().item_text(item)
+
+        wearer = self._wearer()
+        helmet = self._worn(wearer, Helmet, "an iron helmet")
+        self.call(CmdRecording(), "", caller=wearer)
+        # Humanoid has four slots and one is filled.
+        self.assertEqual(len(asked), 1)
+        self.assertIs(asked[0], helmet)
+
 
 class InventoryCommandTests(EvenniaCommandTest):
     """CI — what a player is carrying but not wearing."""

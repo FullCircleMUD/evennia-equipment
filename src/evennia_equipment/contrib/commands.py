@@ -201,6 +201,22 @@ class CmdEquipmentMixin:
     # rather than a module constant, so a game widens it by subclassing.
     slot_column_gap = 2
 
+    def item_text(self, item):
+        """What a filled slot's line shows after the slot column.
+
+        Override to say more about the item — a condition, a charge count —
+        and call ``super()`` for the name. Never asked about an empty slot.
+
+        Args:
+            item: The object in the slot.
+
+        Returns:
+            str: The text, with any colour codes it needs.
+        """
+        # Evennia's own viewer-aware hook, so a game with darkness gets
+        # this listing right without a seam of ours.
+        return f"|w{item.get_display_name(self.caller)}|n"
+
     def func(self):
         caller = self.caller
         slots = caller.worn_items
@@ -218,10 +234,8 @@ class CmdEquipmentMixin:
                 # on every line a player has not filled.
                 lines.append(f"  {bracket}")
                 continue
-            # Evennia's own viewer-aware hook, so a game with darkness gets
-            # this listing right without a seam of ours.
             pad = " " * (longest - len(names[slot]) + self.slot_column_gap)
-            lines.append(f"  {bracket}{pad}|w{item.get_display_name(caller)}|n")
+            lines.append(f"  {bracket}{pad}{self.item_text(item)}")
 
         caller.msg("\n".join(lines))
 

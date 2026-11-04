@@ -118,6 +118,7 @@ would not treat as interchangeable.
 | `at_success(item)` | `wear`, `remove` | do anything that follows success — a time wait in a fight. The default does nothing |
 | `at_refused(message)` | `wear`, `remove` | tell the caller a refusal your game's way. The default is `caller.msg` |
 | `extra_lines()` | `inventory` | add lines between the items and the summary — balances, resources |
+| `item_text(item)` | `equipment` | say more about a worn item on its line — a condition, a charge count. Call `super()` for the name |
 | `slot_column_gap` | `equipment` | widen the space after the slot column |
 | `slot`, `verb` | `wear` | make `wield` or `hold` of it: `slot` fixes where the item goes, `verb` words the lines |
 

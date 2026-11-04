@@ -1361,6 +1361,10 @@ game whose items read differently in the dark gets it here without this library 
 gets it in `look` and everywhere else at the same time. A hook of ours would be a second, worse
 version of it.
 
+**What follows the slot is `item_text(item)`.** By default it is the item's display name, in white. A
+game overrides it to say more about the item on its line — a condition, a charge count — and calls
+`super()` for the name. It is asked only about a filled slot, so an override never receives `None`.
+
 **The column is computed, not fixed.** Width comes from the longest slot name this wearer has, so a
 body plan with `LEFT_SHOULDER_PAULDRON` still aligns. The gap after it is a class attribute, so a game
 can widen it by subclassing rather than by reimplementing.
@@ -1379,6 +1383,8 @@ information, and a word for it would be noise on every line a player has not fil
 | CE-07 | Slot names are title-cased with underscores as spaces | test_ce_07_slot_names_are_title_cased_without_underscores |
 | CE-08 | Item names align to the longest slot name | test_ce_08_item_names_align_to_the_longest_slot_name |
 | CE-09 | `CmdEquipment` is `CmdEquipmentMixin` over Evennia's `Command` | test_ce_09_cmdequipment_is_the_mixin_over_evennias_command |
+| CE-10 | A worn item's line shows what `item_text()` returns | test_ce_10_a_worn_items_line_shows_item_text |
+| CE-11 | `item_text()` is asked about each filled slot and never an empty one | test_ce_11_item_text_is_asked_only_about_filled_slots |
 
 `CE-02` matters because `worn_items` is rebuilt in `body_slots` order by `at_init()`, and a sheet that
 reordered them would make a familiar list unreadable after a slot was added.
@@ -1392,6 +1398,9 @@ Collapsing it is a judgement about wording, which is the consumer's.
 
 `CE-08` is what makes it a column rather than a list. It fails on any implementation using a fixed
 width smaller than the longest name.
+
+`CE-11` keeps `None` out of a consumer's override. A refactor that asked every slot would hand an
+override reading the item's condition an empty slot, and it would fail there.
 
 ### CI — the inventory command
 

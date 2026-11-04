@@ -389,13 +389,14 @@ search global and a builder would otherwise reach an object anywhere in the game
 The split is `evennia_targeting.parse_split`, on the last whole-word `on` or `from`. An item whose name
 holds the spaced word — *a ring on a chain* — needs the slot named to be worn by name.
 
-**Five seams, each with one job.**
+**Six seams, each with one job.**
 
 | Seam | On | Default |
 |---|---|---|
 | `announce(item)` | `wear`, `remove` | tells the room with `msg_contents`; a game with its own messaging overrides it |
 | `at_success(item)` | `wear`, `remove` | nothing; a game whose equipping costs a turn starts its time wait here |
 | `extra_lines()` | `inventory` | `[]`; a game's balances, placed between the items and the summary |
+| `item_text(item)` | `equipment` | the item's display name in white; a game adds a condition or a charge count after it |
 | `slot_column_gap` | `equipment` | `2`; the spaces after the slot column |
 | `slot`, `verb` | `wear` | `None` and `wear`; a game's `wield` fixes the slot and words the lines |
 
